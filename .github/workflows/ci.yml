@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [devel, main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # `npm ci` from a clean checkout: this job is also the standing check
+      # that the project still builds and runs from a fresh clone.
+      - run: npm ci
+
+      # Lint and the headless smoke test, per product doc §7.2. There is no
+      # type-check leg — see docs/decisions.md, D-1.
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
