@@ -123,3 +123,41 @@ export const TREE_TYPES = Object.freeze({
   /** Phase 1 addition: an orientation landmark with no economy attached. */
   LANDMARK: 'landmark',
 });
+
+/**
+ * Soft-currency materials from the product doc §3.1.
+ *
+ * Rarity is not just a spawn weight — it is biased toward trees that are hard
+ * to get to, so the scarce materials sit behind reach rather than behind
+ * repetition. §3.3 asks for exactly that: rare materials gated by skill, not
+ * by grind.
+ */
+export const MATERIAL_TYPES = Object.freeze({
+  ACORNS: 'acorns',
+  SILK: 'silk',
+  BARK: 'bark',
+  BERRIES: 'berries',
+});
+
+/**
+ * Base spawn weight, how strongly effort skews it, and the size of a cache.
+ * `rarity` 0 means "found anywhere"; higher means "the far, tall corners of
+ * the forest".
+ */
+export const MATERIAL_TABLE = Object.freeze({
+  [MATERIAL_TYPES.ACORNS]: Object.freeze({ weight: 1, rarity: 0, amount: [1, 3] }),
+  [MATERIAL_TYPES.BARK]: Object.freeze({ weight: 0.7, rarity: 0, amount: [1, 3] }),
+  [MATERIAL_TYPES.SILK]: Object.freeze({ weight: 0.1, rarity: 1, amount: [1, 2] }),
+  [MATERIAL_TYPES.BERRIES]: Object.freeze({ weight: 0.02, rarity: 2, amount: [1, 1] }),
+});
+
+export const MATERIAL_CONFIG = Object.freeze({
+  /** Share of trees carrying a cache. Rewarding without saturating the map. */
+  cacheChance: 0.45,
+  /** How hard effort skews the rare materials. 0 would make rarity cosmetic. */
+  effortWeighting: 8,
+  /** Height a cache floats above the perch, in metres. */
+  cacheHeightOffset: 1.2,
+  /** Seed offset, so material placement does not consume the worldgen stream. */
+  seedSalt: 0x9e3779b9,
+});

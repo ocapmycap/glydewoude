@@ -17,9 +17,11 @@ import {
   deriveGlideProfile,
   distance2D,
   generateForest,
+  generateMaterialCaches,
   maxGlideRange,
 } from '@glidewood/shared';
 
+import { createCollectionLedger } from './collection.js';
 import { createInteractionRegistry, landmarkInteraction } from './interactions.js';
 import { GliderPhase, landOn, launch, perchOn, stepAirborne } from './glider.js';
 import { resolveLanding } from './landing.js';
@@ -30,6 +32,8 @@ import { resetEdges } from './input-state.js';
  * @param {object} [options.world]   a forest from generateForest(); one is made if omitted
  * @param {object} [options.stats]   upgrade tiers; Phase 1 always passes base
  * @param {object} [options.tuning]  a mutable copy of GLIDE_TUNING for live tweaking
+ * @param {Array<object>} [options.caches]  material caches; derived from the
+ *   world seed if omitted, so client and server agree without syncing
  */
 export function createSimulation(options = {}) {
   const world = options.world ?? generateForest();
@@ -39,6 +43,10 @@ export function createSimulation(options = {}) {
 
   const interactions = createInteractionRegistry();
   interactions.register(TREE_TYPES.LANDMARK, landmarkInteraction);
+
+  const collection = createCollectionLedger({
+    caches: options.caches ?? generateMaterialCaches(world),
+  });
 
   const listeners = new Set();
   const emit = (event) => listeners.forEach((listener) => listener(event));
@@ -70,6 +78,11 @@ export function createSimulation(options = {}) {
     glider = landOn(glider, tree);
     emit({ type: 'glide:landed', tree, reason, glide: finished });
     interactions.land(tree, context());
+
+    // Materials are claimed by arriving, which reuses the landing the player
+    // already had to earn rather than adding a second pickup mechanic.
+    const intent = collection.collectAt(tree, { atTime: elapsed, glide: finished });
+    if (intent) emit({ type: 'material:collected', tree, intent });
   }
 
   function doRespawn() {
@@ -85,6 +98,7 @@ export function createSimulation(options = {}) {
     stats,
     tuning,
     interactions,
+    collection,
 
     /** Subscribe to simulation events; returns an unsubscribe function. */
     on(listener) {

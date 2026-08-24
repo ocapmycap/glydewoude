@@ -227,3 +227,116 @@ canopies, and an outline hull for each) rather than a mesh per tree.
 **Reasoning.** Marginally more code than the naive version, but §10 flags viral
 traffic spikes as the expected shape of success, and those arrive on whatever
 phone is nearest. Four draw calls instead of ~750 is worth ten lines.
+
+---
+
+## D-15 — Materials are collected by landing, not by flying through them
+
+**Ambiguity.** §2.1's loop is "glide → land on a tree → interact (collect / …)".
+It does not say whether materials are picked up in the air or on arrival.
+
+**Decision.** A cache is claimed by perching on the tree that holds it. There
+are no mid-air collectibles.
+
+**Reasoning.** The simpler option, and it reuses a landing the player already
+had to earn. Mid-air motes would need a second proximity system in the step
+loop, a second tuning surface for pickup radius, and would pull attention away
+from the line you are flying — which is the thing Phase 1 established as the
+point of the game. The §2.1 wording puts collection after landing anyway.
+
+---
+
+## D-16 — Cache placement is derived from the world seed, in `/shared`
+
+**Decision.** `shared/src/materials.js` generates caches deterministically from
+the world's seed, in the same package as worldgen and the glide math.
+
+**Reasoning.** Straight extension of D-3. §6.1 requires the server to validate
+collection claims, which means it must know what was collectable and where. A
+seed-derived layout means both sides compute the same answer without shipping a
+table over the wire or trusting the client's account of it.
+
+The material RNG is salted off the world seed rather than sharing its stream,
+so retuning cache placement cannot silently move every tree. A test covers
+this.
+
+---
+
+## D-17 — The client raises intents and never holds a balance
+
+**Ambiguity.** §6.1 requires server-side validation of material collection.
+The server does not exist yet.
+
+**Decision.** Collection produces an *intent* — which cache, at what position,
+at what point in the run, after what glide — pushed onto a pending queue. The
+ledger's `confirmed` totals start at zero and can only be written by
+`settle()`, which is the shape a server transport will drive. What the UI can
+show is `provisionalTotals()`: confirmed plus in-flight, documented as display
+only.
+
+**Reasoning.** CLAUDE.md warns about exactly this: "Do not let a handler mutate
+a balance locally, however convenient it is while the server is still being
+written." A local counter would work fine today and would be genuinely hard to
+remove later, because by then the UI, the shop and the save format would all be
+reading it. Building the intent shape first costs one indirection now and
+nothing later.
+
+`settle()` *replaces* the confirmed totals with the server's number rather than
+adding to them — if the server disagrees with what the client claimed, the
+server is right by definition, and adding would let a bad client keep its
+inflated figure.
+
+---
+
+## D-18 — Rarity is gated by how hard a tree is to reach
+
+**Ambiguity.** §3.3 asks that "rare materials gate the best upgrades behind
+actual skill/puzzle completion, not pure grind". There are no puzzles yet.
+
+**Decision.** Each tree gets an `effort` score from its distance from spawn and
+its height, and rare materials are weighted toward high-effort trees. Berries
+(the rarest) do not appear on the easiest third of trees at all.
+
+**Reasoning.** Reach is the only skill expression Phase 2 has — puzzles are
+Phase 3. Distance and height are exactly what a better glide ratio buys, so
+this also makes the upgrade tree feel like it opens up the map, which is §2.3's
+soft gating. Both inputs are recomputable from the world, so the server can
+check a claim's plausibility against the same numbers.
+
+Effort is normalised against the forest's actual range rather than an absolute
+divisor. That is not cosmetic: with a fixed divisor every tree in the default
+forest scored above 0.6, the rare-material boost applied everywhere at once,
+and berries came out at 13% even beside the spawn. Tests assert the gradient
+rather than the exact mix.
+
+---
+
+## D-19 — One cache per tree, claimed once per run
+
+**Decision.** A tree carries at most one cache, and claiming it marks it spent
+for the rest of the run. A cache whose intent the server *rejects* stays
+claimed.
+
+**Reasoning.** Simplest rule that stops a player farming one convenient tree by
+relaunching and re-landing. Keeping rejected caches claimed is deliberate: if
+rejection freed the cache, a client whose claims are being refused would be
+invited to retry the same one in a loop, which is the opposite of what a
+rejection means.
+
+Respawning does not reset the ledger — `reset()` exists for a future new-run
+boundary, but pressing R is a convenience, not a fresh run.
+
+---
+
+## D-20 — No rendering or HUD for materials in this change
+
+**Decision.** This work stops at `shared/src` and `client/src/sim`. Caches are
+not drawn and totals are not displayed.
+
+**Reasoning.** Scope boundary, not an oversight. Several sessions are working
+on Phase 2 in parallel and `client/src/render` and `client/src/ui` are heavily
+shared; claiming them here would collide. Everything a renderer or HUD needs is
+already exposed and needs no change to this code: `simulation.collection.caches`
+for what to draw, the `material:collected` event for feedback,
+`provisionalTotals()` and `hasUnconfirmed` for a display that can be honest
+about what is and is not confirmed.
