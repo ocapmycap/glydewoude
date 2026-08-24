@@ -41,4 +41,12 @@ export default [
       globals: { ...globals.node, ...globals.es2023 },
     },
   },
+  {
+    // The server is a Node process, not a browser page: it needs `process`,
+    // `console` and friends, and must never see the browser globals.
+    files: ['server/**/*.js'],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.es2023 },
+    },
+  },
 ];

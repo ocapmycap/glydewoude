@@ -1,0 +1,21 @@
+{
+  "name": "@glidewood/server",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Glidewood backend: accounts, persistence, and server-side validation of the economy.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "migrate": "node src/db/cli-migrate.js",
+    "seed": "node src/db/cli-seed.js"
+  },
+  "dependencies": {
+    "@glidewood/shared": "*",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "pg-mem": "^3.0.14"
+  }
+}

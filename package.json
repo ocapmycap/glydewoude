@@ -6,7 +6,8 @@
   "type": "module",
   "workspaces": [
     "shared",
-    "client"
+    "client",
+    "server"
   ],
   "engines": {
     "node": ">=20"
