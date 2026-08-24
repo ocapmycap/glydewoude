@@ -8,6 +8,12 @@
  * anything at all.
  *
  * Rendering gets an interpolation alpha so it stays smooth between steps.
+ *
+ * The clock and the frame scheduler are injected rather than reached for.
+ * `requestAnimationFrame` and `performance` are browser globals, and nothing
+ * under sim/ is allowed to touch those — the ESLint config enforces it — so
+ * the browser driver is supplied by main.js and the tests supply a hand-cranked
+ * one.
  */
 
 export const FIXED_DT = 1 / 60;
@@ -16,16 +22,16 @@ export const MAX_FRAME_TIME = 0.25;
 
 /**
  * @param {object} options
- * @param {(dt: number) => void} options.update    advance the simulation
+ * @param {(dt: number) => void} options.update     advance the simulation
  * @param {(alpha: number) => void} options.render  draw, alpha in [0,1)
- * @param {() => number} [options.now]              seconds; injectable for tests
- * @param {(cb: FrameRequestCallback) => number} [options.schedule]
- * @param {(handle: number) => void} [options.cancel]
+ * @param {() => number} options.now                current time in seconds
+ * @param {(cb: () => void) => unknown} options.schedule   queue the next frame
+ * @param {(handle: unknown) => void} options.cancel       cancel a queued frame
  */
-export function createLoop({ update, render, now, schedule, cancel } = {}) {
-  const clock = now ?? (() => performance.now() / 1000);
-  const requestFrame = schedule ?? ((cb) => requestAnimationFrame(cb));
-  const cancelFrame = cancel ?? ((handle) => cancelAnimationFrame(handle));
+export function createLoop({ update, render, now, schedule, cancel }) {
+  const clock = now;
+  const requestFrame = schedule;
+  const cancelFrame = cancel;
 
   let handle = null;
   let previous = 0;

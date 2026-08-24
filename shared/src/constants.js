@@ -86,7 +86,7 @@ export const WORLD_CONFIG = Object.freeze({
   greatTree: {
     trunkHeight: 46,
     trunkRadius: 2.6,
-    canopyRadius: 14,
+    canopyRadius: 11,
     name: 'The Great Oak',
   },
   /**
@@ -100,8 +100,12 @@ export const WORLD_CONFIG = Object.freeze({
    * into from the side and climb. See client/src/sim/landing.js.
    */
   perchRadius: 3.2,
-  /** Canopy catch height as a multiple of canopy radius — the blob's depth. */
-  canopyDepthFactor: 1.1,
+  /**
+   * Canopy catch height as a multiple of canopy radius. Matched to how far
+   * the rendered foliage actually hangs below the perch (see CANOPY_DROP in
+   * client/src/render/trees.js) so you catch what you can see.
+   */
+  canopyDepthFactor: 1.75,
   /** Extra grab radius around a trunk — the squirrel catches bark, generously. */
   catchMargin: 2.4,
   /** Fraction of trunk height below which you slide past instead of catching. */
