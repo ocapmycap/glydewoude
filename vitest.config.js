@@ -5,6 +5,9 @@ export default defineConfig({
     // Node only. Nothing under test touches the DOM or WebGL — rendering is
     // quarantined in client/src/render so the whole simulation stays headless.
     environment: 'node',
-    include: ['{shared,client}/test/**/*.test.js'],
+    include: [
+      '{shared,client}/test/**/*.test.js',
+      'server/test/**/*.test.js',
+    ],
   },
 });

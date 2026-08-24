@@ -1,0 +1,51 @@
+# The server suite against a real PostgreSQL.
+#
+# Separate from ci.yml so that workflow stays a single dependency-free job.
+# Two guarantees can only be demonstrated against a real database — the
+# append-only trigger and the concurrent duplicate-claim race — and they are
+# exactly the ones worth proving.
+
+name: Server CI
+
+on:
+  pull_request:
+    paths:
+      - 'server/**'
+      - 'shared/**'
+      - '.github/workflows/server-ci.yml'
+  push:
+    branches: [devel, main]
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: glidewood
+          POSTGRES_PASSWORD: glidewood
+          POSTGRES_DB: glidewood_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U glidewood"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Test against real PostgreSQL
+        env:
+          DATABASE_URL: postgres://glidewood:glidewood@localhost:5432/glidewood_test
+        run: npx vitest run server/test

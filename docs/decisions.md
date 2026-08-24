@@ -340,3 +340,142 @@ already exposed and needs no change to this code: `simulation.collection.caches`
 for what to draw, the `material:collected` event for feedback,
 `provisionalTotals()` and `hasUnconfirmed` for a display that can be honest
 about what is and is not confirmed.
+
+---
+
+## D-21 — The server is `node:http` and `pg`, with no framework
+
+**Ambiguity.** §5.2 asks for "a small REST or RPC layer" without naming a
+stack.
+
+**Decision.** Node's built-in `http` module, a thirty-line router, and `pg`.
+No Express, no Fastify, no ORM, no migration tool.
+
+**Reasoning.** Nine endpoints do not justify a framework, and the parts a
+framework would have supplied — routing and body parsing — are the least
+security-sensitive parts of this server. What actually matters here is
+parameterised SQL, hashed tokens, rate limiting and validation, and a
+framework would not have done any of those for us. §6.5 also asks for
+dependency scanning, and the cheapest dependency to audit is the one that is
+not there.
+
+The trade is real: request parsing is ours to get right, so the body reader
+caps its size before buffering and refuses anything that is not a JSON object.
+
+---
+
+## D-22 — No Zone or Tree tables
+
+**Ambiguity.** §5.3's data model lists `Zone` and `Tree` tables.
+
+**Decision.** Neither exists. The server regenerates the forest and its caches
+from the world seed, exactly as the client does.
+
+**Reasoning.** D-3 and D-16 already made the world seed-derived so that both
+sides agree without syncing. Storing trees as well would create a second
+source of truth that could drift from the one the physics actually uses, and a
+migration burden every time worldgen is retuned. The data model is described
+as illustrative; this is the same model with the derivable part left derived.
+
+The player's `world_seed` is stored, so a future forest change does not
+silently invalidate existing saves.
+
+---
+
+## D-23 — Materials are rows and stats are columns, not JSON blobs
+
+**Ambiguity.** §5.3 sketches `glide_stats {}` and `materials {}` as nested
+objects.
+
+**Decision.** `player_materials` is a table keyed by (player, material), and
+the four upgrade tiers are integer columns with `CHECK (>= 0)`. The API still
+presents both as objects, so the doc's shape is what clients see.
+
+**Reasoning.** §5.2 chooses Postgres over SQLite specifically because of
+concurrent writers. A JSON blob forces read-modify-write for every purchase,
+which is exactly the pattern that loses an update under concurrency. With
+rows, a debit is `UPDATE ... SET amount = amount - $1 WHERE amount >= $1` —
+one statement that is atomic, refuses to go negative, and needs no lock. Two
+concurrent purchases cannot both succeed, and a test asserts it.
+
+---
+
+## D-24 — Accounts are a token, with no password and no social login
+
+**Ambiguity.** §9 asks for "player accounts" in Phase 2. §6.2 says use
+session or JWT auth and, for social login, "keep scope minimal".
+
+**Decision.** Registering creates a player and returns an opaque random token.
+Whoever holds the token is the player. No password, no email, no OAuth.
+
+**Reasoning.** The Phase 2 deliverable is "a loop that persists across
+sessions", and a bearer token delivers exactly that. Passwords bring reset
+flows, email delivery and credential storage; social login brings a provider
+integration and its consent screens. Neither protects anything yet — there are
+no purchased cosmetics to steal until Phase 3.
+
+Tokens are stored as SHA-256 hashes, so the database never holds anything
+usable (§6.5), and sessions are revocable, which is the reason for choosing
+opaque tokens over JWTs.
+
+**Revisit when.** Real-money cosmetics exist. At that point an account is worth
+stealing and needs a recovery story.
+
+---
+
+## D-25 — Prices live on the server, not in `/shared`
+
+**Ambiguity.** Upgrade costs are game data, and `/shared` is where game data
+has lived so far.
+
+**Decision.** The catalogue and its prices are server-side. Clients read them
+from `GET /api/shop/catalog`.
+
+**Reasoning.** §6.1 makes the server the only authority on cost. A price table
+shipped to the browser is either redundant or, if anything trusts it, a thing
+to be edited. Keeping it server-side also means prices can be retuned without
+shipping a client build.
+
+---
+
+## D-26 — Tests run on pg-mem by default and real PostgreSQL on demand
+
+**Ambiguity.** §7.4 asks for integration tests on transaction validation and
+"can the client cheat this" cases. §7.3 wants dev to match production.
+
+**Decision.** The suite runs the real schema and real SQL against pg-mem with
+no service required, and the identical suite runs against PostgreSQL when
+`DATABASE_URL` is set. A separate CI job runs the latter.
+
+**Reasoning.** Server tests that need a database daemon would either break the
+existing single-job CI or get skipped, and skipped tests are worse than absent
+ones. pg-mem executes the actual SQL, so it catches far more than mocks would.
+
+Two things it cannot do, both covered in the PostgreSQL job and marked in the
+source: it cannot parse the plpgsql of the append-only trigger, and it does not
+isolate concurrent transactions, so it cannot demonstrate that a duplicate
+claim pays out once. Both guarantees are real — this is a limitation of the
+emulator, not of the code — and finding that out was worth the extra job.
+
+---
+
+## D-27 — Position anchoring, and why the travel allowance is small
+
+**Ambiguity.** §6.1 permits client-reported position but asks for plausibility
+checks "given last known position/time".
+
+**Decision.** The server stores a position anchor, written on every validated
+collection and on explicit position saves. A claim is refused when the distance
+from the anchor exceeds `graceMetres + (elapsed + graceSeconds) × topSpeed`,
+where top speed comes from the player's own upgrade tiers.
+
+**Reasoning.** Bounding horizontal speed catches teleports and speed hacks,
+which is what §6.3 asks for, without pretending to judge whether a line was
+optimal. Altitude is deliberately not bounded: climbing a trunk is free height
+by design (D-11), so a vertical bound would flag ordinary play.
+
+The grace is split into a flat distance and a small time allowance for a
+reason found the hard way. The first version used a single 15-second grace,
+which at top speed buys about 576 metres — wider than the entire forest, so no
+teleport was detectable and the check was decorative while appearing to work.
+A unit test now asserts the allowance stays smaller than the map.
