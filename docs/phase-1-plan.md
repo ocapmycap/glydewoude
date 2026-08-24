@@ -199,16 +199,20 @@ the CI leg described in §7.2 (minus type-check, see the decisions log).
 
 ## 9. Deliverables checklist
 
-- [ ] `docs/phase-1-plan.md` (this file), committed first
-- [ ] Product doc relocated into `/docs` per §7.1
-- [ ] Workspace scaffold: root, `/client`, `/shared`
-- [ ] `/shared`: constants, seeded RNG, pure glide math, worldgen
-- [ ] `/client/src/sim`: world, glider state machine, landing, interactions, loop
-- [ ] `/client/src/render`: toon materials + outlines, trees, squirrel, camera, renderer
-- [ ] `/client/src/ui`: input, HUD, tuning panel
-- [ ] Unit tests + headless core-glide-loop smoke test, passing
-- [ ] ESLint config, CI workflow
-- [ ] `README.md` — run from scratch
-- [ ] `docs/decisions.md` — every ambiguity resolved, with reasoning
-- [ ] `CLAUDE.md` — conventions for later sessions
-- [ ] Verified: clean clone -> install -> lint -> test -> build all succeed
+*All complete. Verified from a fresh clone: `npm ci`, `npm run lint`,
+`npm test` (59 tests), `npm run build`, and both `npm run dev` and
+`npm run preview` loading and playing in a browser.*
+
+- [x] `docs/phase-1-plan.md` (this file), committed first
+- [x] Product doc relocated into `/docs` per §7.1
+- [x] Workspace scaffold: root, `/client`, `/shared`
+- [x] `/shared`: constants, seeded RNG, pure glide math, worldgen
+- [x] `/client/src/sim`: world, glider state machine, landing, interactions, loop
+- [x] `/client/src/render`: toon materials + outlines, trees, squirrel, camera, renderer
+- [x] `/client/src/ui`: input, HUD, tuning panel
+- [x] Unit tests + headless core-glide-loop smoke test, passing
+- [x] ESLint config, CI workflow
+- [x] `README.md` — run from scratch
+- [x] `docs/decisions.md` — every ambiguity resolved, with reasoning
+- [x] `CLAUDE.md` — conventions for later sessions
+- [x] Verified: clean clone -> install -> lint -> test -> build all succeed
