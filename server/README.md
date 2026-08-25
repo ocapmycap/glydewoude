@@ -11,19 +11,30 @@ supplied about its own balance.
 
 ## Run it locally
 
-Needs Docker (for Postgres) and Node 20+.
+Needs Docker (for Postgres) and **Node 20.12 or newer** — a little above the
+repo's baseline of 20, because the scripts here load `.env` with Node's own
+`--env-file-if-exists` rather than pulling in `dotenv`.
+
+Everything below runs from the repository root:
 
 ```bash
-cd server
-cp .env.example .env
-docker compose up -d          # Postgres on :5432
-npm install --workspaces      # from the repo root
-npm run migrate --workspace server
-npm start --workspace server  # http://localhost:8787
+npm install
+cp server/.env.example server/.env
+docker compose -f server/docker-compose.yml up -d   # Postgres on :5432
+npm start --workspace server                        # http://localhost:8787
 ```
 
-`npm start` runs pending migrations itself, so the explicit `migrate` step is
-only needed if you want to apply them without booting the server.
+`npm start` runs pending migrations itself, so `npm run migrate --workspace
+server` is only needed if you want to apply them without booting the server.
+
+Every script in this package reads `server/.env` if it is there and carries on
+without it if it is not, so exporting `DATABASE_URL` yourself works just as
+well:
+
+```bash
+DATABASE_URL=postgres://glidewood:glidewood@localhost:5432/glidewood \
+  npm start --workspace server
+```
 
 ### A test player with materials already banked
 

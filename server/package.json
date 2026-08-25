@@ -5,11 +5,14 @@
   "description": "Glidewood backend: accounts, persistence, and server-side validation of the economy.",
   "type": "module",
   "main": "src/index.js",
+  "engines": {
+    "node": ">=20.12"
+  },
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "migrate": "node src/db/cli-migrate.js",
-    "seed": "node src/db/cli-seed.js"
+    "start": "node --env-file-if-exists=.env src/index.js",
+    "dev": "node --watch --env-file-if-exists=.env src/index.js",
+    "migrate": "node --env-file-if-exists=.env src/db/cli-migrate.js",
+    "seed": "node --env-file-if-exists=.env src/db/cli-seed.js"
   },
   "dependencies": {
     "@glidewood/shared": "*",

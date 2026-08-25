@@ -8,8 +8,10 @@ import pg from 'pg';
 export function createPool(config) {
   if (!config.databaseUrl) {
     throw new Error(
-      'DATABASE_URL is not set. Start Postgres with `docker compose up -d` '
-      + 'and copy .env.example to .env, or see server/README.md.',
+      'DATABASE_URL is not set. From the repo root: '
+      + '`docker compose -f server/docker-compose.yml up -d`, '
+      + '`cp server/.env.example server/.env`, '
+      + 'then `npm start --workspace server`. See server/README.md.',
     );
   }
   return new pg.Pool({

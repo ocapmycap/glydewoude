@@ -3,17 +3,28 @@
 A cozy browser game about a gliding squirrel. Launch from a branch, ride the
 glide across the canopy, catch a trunk on the far side, climb, and go again.
 
-**This repository is at Phase 1 of the [product document](docs/glidewood-product-doc.md):
-one small forest, basic glide physics, no accounts, no saving.** The whole
-phase exists to answer one question — *does the movement feel good?* — because
-that is the go/no-go gate for everything after it.
+**Phase 1 is done.** One small forest, basic glide physics, and the single
+question it existed to answer — *does the movement feel good?* — settled by
+playing it. That was the go/no-go gate for everything after it.
+
+**Phase 2 is half built.** Materials, accounts, Postgres persistence and the
+whole server-side economy exist and are tested. What does not exist yet is the
+wire between them: the client cannot call the server, so nothing you pick up
+survives a reload, and the shop trees now scattered through the forest have no
+counter to stand at. What is done and what is left is tracked item by item in
+[`docs/phase-2-progress.md`](docs/phase-2-progress.md).
+
+Scope for both comes from the [product document](docs/glidewood-product-doc.md) §9.
 
 ---
 
 ## Run it locally, from scratch
 
 You need **Node.js 20 or newer** and npm. Nothing else — no database, no Docker,
-no API keys, no `.env` file.
+no API keys, no `.env` file. That is not leftover Phase 1 wording: the client
+has no transport to the server yet, so the game genuinely runs standalone.
+Running the backend is optional, and covered under
+[Running the server](#running-the-server).
 
 ```bash
 git clone https://github.com/ocapmycap/glydewoude.git
@@ -42,8 +53,28 @@ Run all of these from the repository root.
 
 `npm run build` writes a self-contained static site to `client/dist/`. It uses
 relative asset paths, so it works from any static host and any subpath without
-a rebuild — drop it on Vercel, Netlify or Cloudflare Pages. There is no backend
-to deploy in Phase 1.
+a rebuild — drop it on Vercel, Netlify or Cloudflare Pages.
+
+The backend does not need deploying alongside it yet. Nothing in the built
+bundle calls it.
+
+### Running the server
+
+Optional, and only interesting if you are working on persistence or the
+economy — the game does not call it. It needs Docker for Postgres, and
+**Node 20.12 or newer**: the server scripts load `.env` with Node's own
+`--env-file-if-exists` rather than a `dotenv` dependency, and that flag arrived
+in 20.12. The client is fine on any Node 20.
+
+```bash
+cp server/.env.example server/.env
+docker compose -f server/docker-compose.yml up -d   # Postgres on :5432
+npm start --workspace server                        # http://localhost:8787
+```
+
+It applies pending migrations on boot. Endpoints, the seed script for a test
+player with materials already banked, and the design notes are in
+[`server/README.md`](server/README.md).
 
 ---
 
@@ -67,30 +98,43 @@ you can reach one before you sink below its lowest branches.
 Diving buys ground speed at the cost of glide ratio; flaring slows you and
 softens the descent. Cruising untouched is the most efficient way to travel.
 
+**Shop trees are visible but inert.** Nine of them sit in the default forest,
+71 to 246 metres out, canopies coloured apart from the gold of an ordinary
+landmark so you can pick one out from the air. Landing on one opens the shop
+internally and raises a purchase intent if something asks for one — but there
+is no panel to press yet, and no server connection to answer it, so nothing
+happens on screen. Same for materials: you collect them by landing, and the
+HUD does not show them.
+
 ### The tuning dials
 
 Press <kbd>T</kbd> and the glide constants become editable while you fly. This
-is the point of Phase 1 — if the glide feels wrong, find the numbers where it
-feels right and say what they were. Changes are local to your browser tab and
-reset on reload.
+was the whole point of Phase 1 — if the glide feels wrong, find the numbers
+where it feels right and say what they were — and the dials stayed, because
+upgrades change the same feel and it still needs tuning by hand. Changes are
+local to your browser tab and reset on reload.
 
 ---
 
 ## Layout
 
 ```
-client/          Three.js frontend — the only runnable app in Phase 1
-  src/sim/         the glide loop. Pure JS: no Three.js, no DOM
+client/          Three.js frontend — the game you actually play
+  src/sim/         the glide loop, collection, shops. Pure JS: no Three.js, no DOM
   src/render/      everything that touches Three.js
   src/ui/          input bindings, HUD, tuning panel
   test/            headless tests, including the core glide-loop smoke test
-shared/          logic the Phase 2 server will also need
-  src/             glide physics, forest generation, seeded RNG, constants
-docs/            the product doc, the Phase 1 plan, and the decision log
+shared/          logic the client and the server both need
+  src/             glide physics, forest generation, material caches, seeded RNG
+server/          accounts, persistence, and validation of the economy
+  src/domain/      the rules: auth, upgrades, anti-cheat
+  src/repo/        SQL, one module per table
+docs/             the product doc, phase plans, and the decision log
 ```
 
-There is no `server/` yet. Phase 2 adds it along with persistence and
-server-side validation — see [`docs/decisions.md`](docs/decisions.md) (D-2).
+`server/` imports `shared/` to re-derive what a client claims — the same
+physics, the same forest, from the same seed. That is §6.1, and it is the
+reason the Three.js-free boundary below is enforced rather than encouraged.
 
 `client/src/sim` and `shared/src` are deliberately free of Three.js, the DOM
 and browser globals. That is what lets the automated tests fly the *actual*
@@ -105,7 +149,17 @@ both ESLint and a test rather than left to good intentions.
 npm test
 ```
 
-Everything runs in plain Node — no browser, no WebGL, no jsdom.
+Everything runs in plain Node — no browser, no WebGL, no jsdom. The server
+suite included: it runs the real schema and the real SQL against
+[pg-mem](https://github.com/oguimbal/pg-mem), so `npm test` needs no database.
+
+Two tests skip by default, because pg-mem cannot demonstrate what they assert —
+the append-only ledger trigger and a concurrent duplicate-claim race. Point the
+suite at a real PostgreSQL to run them, as CI does:
+
+```bash
+DATABASE_URL=postgres://glidewood:glidewood@localhost:5432/glidewood npm test
+```
 
 The one that matters is `client/test/glide-loop.smoke.test.js`. It builds the
 seeded forest, perches the squirrel on the great oak, and flies five
