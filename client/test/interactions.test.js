@@ -24,8 +24,8 @@ describe('interaction registry', () => {
 
   it('treats an unregistered tree type as a no-op, not an error', () => {
     const registry = createInteractionRegistry();
-    expect(registry.has(TREE_TYPES.SHOP)).toBe(false);
-    expect(() => registry.land({ id: 't', type: TREE_TYPES.SHOP }, { emit: vi.fn() })).not.toThrow();
+    expect(registry.has(TREE_TYPES.PUZZLE)).toBe(false);
+    expect(() => registry.land({ id: 't', type: TREE_TYPES.PUZZLE }, { emit: vi.fn() })).not.toThrow();
   });
 
   it('tolerates a handler that only implements one half of the pair', () => {
@@ -67,9 +67,13 @@ describe('simulation wiring', () => {
     expect(events.map((event) => event.type)).toContain('landmark:arrived');
   });
 
-  it('does not register economy interactions — those are later phases', () => {
+  it('registers the shop interaction — Phase 2 economy content', () => {
     const simulation = createSimulation({ world: generateForest() });
-    expect(simulation.interactions.has(TREE_TYPES.SHOP)).toBe(false);
+    expect(simulation.interactions.has(TREE_TYPES.SHOP)).toBe(true);
+  });
+
+  it('does not register interactions belonging to later phases', () => {
+    const simulation = createSimulation({ world: generateForest() });
     expect(simulation.interactions.has(TREE_TYPES.PUZZLE)).toBe(false);
     expect(simulation.interactions.has(TREE_TYPES.CAFETERIA)).toBe(false);
     expect(simulation.interactions.has(TREE_TYPES.CUSTOMIZATION)).toBe(false);

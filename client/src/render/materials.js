@@ -29,6 +29,7 @@ export const PALETTE = Object.freeze({
   canopy: 0x4f8f4a,
   canopyAlt: 0x63a352,
   canopyDestination: 0xd6a03a,
+  canopyShop: 0x9b6b8e,
   outline: 0x22301f,
   squirrelBody: 0xb2703c,
   squirrelBelly: 0xf0dcb8,

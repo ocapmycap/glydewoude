@@ -46,6 +46,54 @@ const LANDMARK_NAMES = [
   'Old Nutfall',
 ];
 
+/**
+ * Longer than it strictly needs to be. A default forest holds nine shops, and
+ * two shops sharing a name is worse than two scenery landmarks sharing one —
+ * a shop is a place you set out for, and "head for Barkside Supply" has to
+ * mean somewhere. Twelve keeps the shipped forest unambiguous; the modulo
+ * below is the backstop for a config that asks for more.
+ */
+const SHOP_NAMES = [
+  'The Knothole Exchange',
+  'Barkside Supply',
+  'Tallgrass Trading Post',
+  'The Acorn Counter',
+  'Driftwood & Down',
+  'Understory Outfitters',
+  'The Gnawed Ledger',
+  'Rootcellar Goods',
+  'Cones & Cordage',
+  'The Tucked Larder',
+  'Bramblewick Mercantile',
+  'Highbough Provisions',
+];
+
+/**
+ * What a destination tree turns out to be.
+ *
+ * Phase 2 has two answers, shop or landmark. Puzzle, cafeteria and
+ * customization trees are Phases 3 and 4, and they join this function rather
+ * than its callers — worldgen's job is to say what a tree is, and everything
+ * downstream keys off `type` alone.
+ *
+ * @param {() => number} rng  the destination-type stream, not the placement one
+ */
+export function pickDestinationType(rng, config = WORLD_CONFIG) {
+  return rng() < config.shopShare ? TREE_TYPES.SHOP : TREE_TYPES.LANDMARK;
+}
+
+/**
+ * Name a destination from its own list, in placement order.
+ *
+ * Each type counts separately so the first shop is always the first name in
+ * SHOP_NAMES, however many landmarks happen to precede it.
+ */
+function nameFor(type, used) {
+  if (type === TREE_TYPES.SHOP) return SHOP_NAMES[used.shop++ % SHOP_NAMES.length];
+  if (type === TREE_TYPES.LANDMARK) return LANDMARK_NAMES[used.landmark++ % LANDMARK_NAMES.length];
+  return undefined;
+}
+
 function makeTree(id, spec, config) {
   const perchY = spec.position.y + spec.trunkHeight;
   return {
@@ -120,7 +168,12 @@ export function generateForest(overrides = {}) {
   );
 
   const positions = scatterPositions(rng, config);
-  let landmarkIndex = 0;
+
+  // Typing destinations draws from its own stream. Rolling it inline would
+  // shift every tree placed after it, so adding shops would have moved every
+  // existing seed's forest out from under the server's position checks.
+  const typeRng = createRng((seed ^ config.destinationTypeSalt) >>> 0);
+  const used = { shop: 0, landmark: 0 };
 
   positions.forEach((position, index) => {
     const [minH, maxH] = config.trunkHeightRange;
@@ -129,15 +182,17 @@ export function generateForest(overrides = {}) {
     const rimness = Math.hypot(position.x, position.z) / config.areaRadius;
     const trunkHeight = randRange(rng, minH, maxH) * (0.75 + rimness * 0.5);
     const isDestination = rng() < config.destinationRatio;
+    // Rolled for every tree, destination or not, so retuning
+    // `destinationRatio` cannot reshuffle which destinations became shops.
+    const destinationType = pickDestinationType(typeRng, config);
+    const type = isDestination ? destinationType : TREE_TYPES.SCENERY;
 
     trees.push(
       makeTree(
         `tree-${String(index).padStart(3, '0')}`,
         {
-          type: isDestination ? TREE_TYPES.LANDMARK : TREE_TYPES.SCENERY,
-          name: isDestination
-            ? LANDMARK_NAMES[landmarkIndex++ % LANDMARK_NAMES.length]
-            : undefined,
+          type,
+          name: nameFor(type, used),
           position,
           trunkHeight,
           trunkRadius: randRange(rng, ...config.trunkRadiusRange),

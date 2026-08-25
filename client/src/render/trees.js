@@ -17,7 +17,19 @@ import {
   Group,
 } from 'three';
 
+import { TREE_TYPES } from '@glidewood/shared';
+
 import { PALETTE, mixColor, outlineMaterial, toonMaterial } from './materials.js';
+
+function canopyColorFor(tree, treeIndex) {
+  if (tree.type === TREE_TYPES.SHOP) {
+    return mixColor(PALETTE.canopyShop, PALETTE.canopyAlt, 0.1);
+  }
+  if (tree.isDestination) {
+    return mixColor(PALETTE.canopyDestination, PALETTE.canopyAlt, 0.15);
+  }
+  return mixColor(PALETTE.canopy, PALETTE.canopyAlt, ((treeIndex * 7) % 10) / 10);
+}
 
 /** How much bigger the inverted hull is than the mesh it outlines. */
 const OUTLINE_SCALE = 1.035;
@@ -89,9 +101,11 @@ export function createForest(world) {
       mixColor(PALETTE.bark, PALETTE.barkGreat, isGreat ? 1 : (treeIndex % 5) / 8),
     );
 
-    const canopyColor = tree.isDestination
-      ? mixColor(PALETTE.canopyDestination, PALETTE.canopyAlt, 0.15)
-      : mixColor(PALETTE.canopy, PALETTE.canopyAlt, ((treeIndex * 7) % 10) / 10);
+    // Shops get their own canopy colour rather than sharing the destination
+    // gold, because finding one from the air is the navigation half of the
+    // Phase 2 loop — a shop you cannot pick out of the treeline is a shop you
+    // reach by accident.
+    const canopyColor = canopyColorFor(tree, treeIndex);
 
     for (const blob of CANOPY_BLOBS) {
       const radius = tree.canopyRadius * blob.scale;

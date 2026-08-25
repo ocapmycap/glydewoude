@@ -479,3 +479,42 @@ reason found the hard way. The first version used a single 15-second grace,
 which at top speed buys about 576 metres — wider than the entire forest, so no
 teleport was detectable and the check was decorative while appearing to work.
 A unit test now asserts the allowance stays smaller than the map.
+
+---
+
+## D-28 — Shops are a share of destination trees, typed from a salted stream
+
+**Ambiguity.** §9's Phase 2 asks for "one functioning shop". §2.3 asks for
+10–15% destination trees and §5.3 lists `shop` as a tree type, but neither says
+how many of those destinations should be shops, or where the decision is made.
+
+**Decision.** Worldgen types each destination tree, splitting them between
+`SHOP` and `LANDMARK` at `WORLD_CONFIG.shopShare` (0.4). The default forest
+comes out at 187 trees, 22 destinations, 9 of them shops, spread from 71 m to
+246 m out. "One functioning shop" is read as one working shop *type* rather
+than a single instance — a lone shop makes the return trip the game instead of
+the glide, and the code for nine is the code for one.
+
+The type roll draws from its own RNG stream, salted off the world seed, rather
+than from the placement stream.
+
+**Reasoning.** The salt is the part worth recording. Rolling the type inline
+would have consumed a number from the placement sequence, shifting every tree
+drawn after it — so adding shops would have silently relocated every existing
+seed's forest, including the geometry the server validates claimed positions
+against (§6.1, D-27). Materials already avoid this the same way (D-16), and a
+test now pins it: generating at `shopShare` 0 and 1 must produce identical tree
+positions.
+
+Rolling for every tree rather than only destinations costs nothing and means
+retuning `destinationRatio` cannot reshuffle which destinations are shops.
+
+Shops get their own name list and their own canopy colour. The colour is not
+decoration — picking a shop out of the treeline from the air is the navigation
+half of the loop, and the destination gold already means "landmark".
+
+**What this does not decide.** Prices, stock, and what a purchase costs all
+stay on the server (D-25). `client/src/sim/shop.js` raises purchase intents and
+holds no balance and no tiers, exactly as collection does with materials
+(D-17). Nothing yet carries either intent to the server — that is the transport
+work, and until it lands a purchase is raised, queued, and never answered.

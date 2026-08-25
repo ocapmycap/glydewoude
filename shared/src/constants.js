@@ -95,6 +95,20 @@ export const WORLD_CONFIG = Object.freeze({
    */
   destinationRatio: 0.12,
   /**
+   * Share of destination trees that are shops rather than plain landmarks.
+   * The rest stay orientation landmarks: a shop on every destination would
+   * make the forest a high street, and the glide between two of them is the
+   * part the doc actually cares about (§2.3).
+   */
+  shopShare: 0.4,
+  /**
+   * Seed offset for deciding what a destination *is*. Rolling that from the
+   * placement stream would shift every tree drawn after it, silently moving
+   * forests the server validates claimed positions against (§6.1). Same
+   * reason MATERIAL_CONFIG salts its own seed (D-3, D-16).
+   */
+  destinationTypeSalt: 0x517cc1b7,
+  /**
    * Landing volumes. Two of them per tree, and both are generous on purpose:
    * the canopy blob you can drop into from above, and the trunk you can fly
    * into from the side and climb. See client/src/sim/landing.js.

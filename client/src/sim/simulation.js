@@ -23,6 +23,7 @@ import {
 
 import { createCollectionLedger } from './collection.js';
 import { createInteractionRegistry, landmarkInteraction } from './interactions.js';
+import { createShopLedger } from './shop.js';
 import { GliderPhase, landOn, launch, perchOn, stepAirborne } from './glider.js';
 import { resolveLanding } from './landing.js';
 import { resetEdges } from './input-state.js';
@@ -43,6 +44,9 @@ export function createSimulation(options = {}) {
 
   const interactions = createInteractionRegistry();
   interactions.register(TREE_TYPES.LANDMARK, landmarkInteraction);
+
+  const shop = createShopLedger();
+  interactions.register(TREE_TYPES.SHOP, shop.interaction);
 
   const collection = createCollectionLedger({
     caches: options.caches ?? generateMaterialCaches(world),
@@ -99,6 +103,7 @@ export function createSimulation(options = {}) {
     tuning,
     interactions,
     collection,
+    shop,
 
     /** Subscribe to simulation events; returns an unsubscribe function. */
     on(listener) {
@@ -114,6 +119,19 @@ export function createSimulation(options = {}) {
     },
     get elapsed() {
       return elapsed;
+    },
+
+    /**
+     * Ask to buy the next tier of an upgrade at the shop currently underfoot.
+     *
+     * Deliberately changes nothing locally. The intent goes to the server,
+     * which owns the price, the balance and the tiers (§6.1, D-25); new stats
+     * come back the same way any other server state does.
+     */
+    requestPurchase(upgradeKey) {
+      const intent = shop.requestPurchase(upgradeKey, { atTime: elapsed });
+      if (intent) emit({ type: 'shop:purchase-requested', intent });
+      return intent;
     },
 
     /** Re-derive the profile after the tuning panel changes a dial. */

@@ -55,6 +55,71 @@ describe('generateForest', () => {
     }
   });
 
+  it('makes some destinations shops and leaves the rest landmarks', () => {
+    const trees = generateForest().trees;
+    const destinations = trees.filter((tree) => tree.isDestination);
+    const shops = destinations.filter((tree) => tree.type === TREE_TYPES.SHOP);
+
+    expect(shops.length).toBeGreaterThan(0);
+    expect(shops.length).toBeLessThan(destinations.length);
+    for (const tree of destinations) {
+      expect([TREE_TYPES.SHOP, TREE_TYPES.LANDMARK]).toContain(tree.type);
+    }
+  });
+
+  it('names every shop, from its own list rather than the landmarks\' one', () => {
+    const trees = generateForest().trees;
+    const shopNames = trees.filter((t) => t.type === TREE_TYPES.SHOP).map((t) => t.name);
+    const landmarkNames = trees.filter((t) => t.type === TREE_TYPES.LANDMARK).map((t) => t.name);
+
+    expect(shopNames.length).toBeGreaterThan(0);
+    for (const name of shopNames) {
+      expect(typeof name).toBe('string');
+      expect(landmarkNames).not.toContain(name);
+    }
+  });
+
+  it('counts shops as destinations, keeping the doc\'s 10-15% band intact', () => {
+    const allShops = generateForest({ shopShare: 1 });
+    const noShops = generateForest({ shopShare: 0 });
+
+    const share = (world) =>
+      world.trees.filter((tree) => tree.isDestination).length / world.trees.length;
+    expect(share(allShops)).toBeCloseTo(share(noShops), 10);
+    expect(allShops.trees.some((tree) => tree.type === TREE_TYPES.SHOP)).toBe(true);
+    expect(noShops.trees.some((tree) => tree.type === TREE_TYPES.SHOP)).toBe(false);
+  });
+
+  it('types destinations without moving a single tree', () => {
+    // The type roll draws from a salted stream on purpose. If it ever came out
+    // of the placement stream, changing the shop share would silently relocate
+    // the forest — and the server checks claimed positions against it (§6.1).
+    const positionsFor = (shopShare) =>
+      generateForest({ shopShare }).trees.map((tree) => ({
+        id: tree.id,
+        position: tree.position,
+        perchY: tree.perchY,
+      }));
+
+    expect(positionsFor(1)).toEqual(positionsFor(0));
+    expect(positionsFor(0.4)).toEqual(positionsFor(0));
+  });
+
+  it('gives the default forest a distinct name for every shop', () => {
+    // Shops are places you set out for, so two of them answering to the same
+    // name is a navigation bug, not a cosmetic one.
+    const names = generateForest().trees
+      .filter((tree) => tree.type === TREE_TYPES.SHOP)
+      .map((tree) => tree.name);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('assigns the same shops for the same seed, run after run', () => {
+    const shopIds = () =>
+      generateForest().trees.filter((tree) => tree.type === TREE_TYPES.SHOP).map((t) => t.id);
+    expect(shopIds()).toEqual(shopIds());
+  });
+
   it('derives coherent catch volumes for every tree', () => {
     for (const tree of generateForest().trees) {
       expect(tree.minCatchY).toBeGreaterThan(0);
