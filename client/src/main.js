@@ -12,6 +12,7 @@ import { generateForest } from '@glidewood/shared';
 import { createSimulation } from './sim/simulation.js';
 import { createInputState } from './sim/input-state.js';
 import { createLoop } from './sim/loop.js';
+import { createSession } from './net/session.js';
 import { createRenderer } from './render/renderer.js';
 import { createInputBindings } from './ui/input.js';
 import { createHud } from './ui/hud.js';
@@ -23,8 +24,23 @@ const canvas = document.querySelector('#viewport');
 const overlay = document.querySelector('#overlay');
 const hint = document.querySelector('#hint');
 
-const world = generateForest();
-const simulation = createSimulation({ world });
+// Establish the server session before building the world. When it succeeds we
+// restore the player's own forest seed and upgrade tiers; when it fails (server
+// down, offline) we fall back to a fresh local run, unpersisted — the game must
+// still start. The base URL comes from the build's env so a deploy can point at
+// a real server without a code change.
+const session = createSession({
+  baseUrl: import.meta.env.VITE_API_URL || undefined,
+});
+await session.connect();
+const { player } = session;
+
+// The server validates future collection claims against caches derived from the
+// player's stored seed, so the client must build the same forest — otherwise
+// every claim in item 2 would be rejected as an unknown cache. Offline, any
+// seed will do.
+const world = player ? generateForest({ seed: player.worldSeed }) : generateForest();
+const simulation = createSimulation({ world, stats: player?.glideStats });
 const renderer = createRenderer(canvas, world);
 const input = createInputState();
 
