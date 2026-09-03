@@ -19,6 +19,7 @@ import { createRenderer } from './render/renderer.js';
 import { createInputBindings } from './ui/input.js';
 import { createHud } from './ui/hud.js';
 import { createTuningPanel } from './ui/tuning-panel.js';
+import { createShop } from './ui/shop.js';
 
 import './style.css';
 
@@ -71,7 +72,11 @@ simulation.on((event) => {
 
 const hud = createHud(overlay, simulation);
 const tuning = createTuningPanel(overlay, simulation);
-const bindings = createInputBindings(input, canvas, { onToggleTuning: () => tuning.toggle() });
+const shop = createShop(overlay, { session, simulation });
+const bindings = createInputBindings(input, canvas, {
+  onToggleTuning: () => tuning.toggle(),
+  onToggleShop: () => shop.toggle(),
+});
 
 // The opening hint stays up until the player takes their first launch.
 simulation.on((event) => {

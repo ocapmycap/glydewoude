@@ -20,7 +20,7 @@ const MOUSE_SENSITIVITY = 0.0075;
 /** How fast mouse steering recentres when the hand stops moving (1/s). */
 const MOUSE_DECAY = 3.5;
 
-export function createInputBindings(input, canvas, { onToggleTuning } = {}) {
+export function createInputBindings(input, canvas, { onToggleTuning, onToggleShop } = {}) {
   const held = new Set();
   let mouseSteer = 0;
   let mousePitch = 0;
@@ -34,6 +34,7 @@ export function createInputBindings(input, canvas, { onToggleTuning } = {}) {
     }
     if (event.code === 'KeyR') input.respawn = true;
     if (event.code === 'KeyT') onToggleTuning?.();
+    if (event.code === 'KeyB') onToggleShop?.();
     if (event.code === 'Escape' && pointerLocked) document.exitPointerLock();
     held.add(event.code);
   }
