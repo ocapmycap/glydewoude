@@ -1,5 +1,7 @@
 /** `npm run migrate --workspace server` */
 
+import '../load-env.js';
+
 import { loadConfig } from '../config.js';
 import { createDatabase } from './database.js';
 import { migrate } from './migrate.js';
