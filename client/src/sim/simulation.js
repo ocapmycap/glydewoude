@@ -140,6 +140,28 @@ export function createSimulation(options = {}) {
       return profile;
     },
 
+    /**
+     * Adopt upgrade tiers the server has confirmed.
+     *
+     * This is the payoff for `deriveGlideProfile` taking stats as a parameter
+     * rather than reading a module-level table: a purchase that lands mid-run
+     * becomes a better glide on the next launch without the physics knowing
+     * where the number came from.
+     *
+     * Written into the existing object rather than replacing it, so anything
+     * already holding `simulation.stats` keeps seeing the truth. The server is
+     * the only authority on these (§6.1) — nothing else should call this.
+     */
+    applyStats(next) {
+      if (!next) return profile;
+      for (const [key, tier] of Object.entries(next)) {
+        if (Number.isFinite(tier)) stats[key] = tier;
+      }
+      profile = deriveGlideProfile(stats, tuning);
+      emit({ type: 'stats:changed', stats: { ...stats }, profile });
+      return profile;
+    },
+
     /** Best-case remaining glide distance from the current altitude. */
     remainingRange() {
       return maxGlideRange(glider.motion.y - world.config.groundY, profile);

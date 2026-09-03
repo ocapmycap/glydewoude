@@ -7,6 +7,13 @@ export default defineConfig({
   server: {
     port: 5173,
     open: false,
+    // Same-origin in development, so the client's default API base can stay
+    // empty and nobody has to think about CORS to run the game locally. A
+    // build served from somewhere other than its API sets VITE_API_URL instead.
+    proxy: {
+      '/api': { target: 'http://localhost:8787', changeOrigin: true },
+      '/healthz': { target: 'http://localhost:8787', changeOrigin: true },
+    },
   },
   build: {
     outDir: 'dist',

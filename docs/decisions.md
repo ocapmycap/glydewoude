@@ -518,3 +518,97 @@ stay on the server (D-25). `client/src/sim/shop.js` raises purchase intents and
 holds no balance and no tiers, exactly as collection does with materials
 (D-17). Nothing yet carries either intent to the server — that is the transport
 work, and until it lands a purchase is raised, queued, and never answered.
+
+---
+
+## D-29 — Transport is a fourth peer, `client/src/net/`
+
+**Ambiguity.** CLAUDE.md's dependency diagram has exactly three arms out of
+`main.js` — `sim/`, `render/`, `ui/` — and the eight endpoints the server
+exposes fit none of them. `phase-2-progress.md` §3 raised the question and
+deliberately left it open.
+
+**Decision.** A fourth peer, `client/src/net/`, owned by `main.js` and handed
+to whatever needs it, exactly as the clock already is. Three modules: `api.js`
+(the endpoints as functions), `session.js` (the token, across reloads), and
+`sync.js` (the pump that drains the intent queues). The direction is one way
+and enforced by `client/test/architecture.test.js`: `sim/` and `shared/` may
+not import `net/`, and may not call `fetch` at all.
+
+**Reasoning.** The alternative — letting `sim/` reach for the server directly —
+would undo the two properties Phase 1 was built around. A simulation that can
+make a network call is a simulation that cannot be replayed from a seed, and
+the intent ledgers would have somewhere to quietly settle themselves, which is
+exactly the §6.1 mistake `collection.js` was written to make impossible.
+
+Putting transport in `ui/` was the other option and is worse: the pump has to
+run whether or not anything is on screen, and the HUD would have become the
+thing that owns the session.
+
+`net/` is not held to the same purity as `sim/`. It uses `fetch`, `AbortSignal`
+and `setTimeout` — globals Node has too — but a test asserts it never touches
+`document` or `window`, which is what keeps it testable headlessly. Everything
+environmental is still injected: `fetch`, the storage, the retry delay.
+
+**What follows from it.** `sim/` gained exactly one new method,
+`simulation.applyStats()`. It writes server-confirmed tiers into the stats
+object and re-derives the glide profile. That is the payoff for
+`deriveGlideProfile(stats, tuning)` taking stats as a parameter back in Phase 1
+(D-2): a purchase becomes a longer glide without the integrator learning where
+the number came from.
+
+---
+
+## D-30 — Refusals are answers; only "we could not ask" is retried
+
+**Ambiguity.** §6.1 says the server validates and commits, but says nothing
+about what a client should do with a `no`.
+
+**Decision.** The pump splits server responses in two. A 4xx is an answer: the
+intent leaves the queue and the UI is told why. Offline, a 5xx and a 429 are
+not answers, so the intent stays queued and is retried with a capped backoff.
+Collections and purchases leave the queue by different routes — `reject()` and
+`settle()` respectively — because a refused collection must keep its cache
+claimed and a refused purchase can simply be asked for again.
+
+Everything is posted **one at a time and in order**. This is not tidiness: the
+server anchors a player's position on every validated collection and bounds the
+next claim against it (D-27), so two collections validated out of order look
+exactly like a teleport. Position saves jump the queue ahead of the pickups
+behind them, for the same reason — a fresh anchor, then the claim measured
+against it.
+
+**Reasoning.** Retrying a refusal is how a client turns one rejected acorn into
+a request loop, and `already_collected` would retry forever. Meanwhile giving
+up on a dropped connection loses a pickup the player earned. The line between
+the two is "might this come out differently", and status codes already say.
+
+---
+
+## D-31 — The game runs without a server, and says so
+
+**Ambiguity.** Phase 2 introduces a hard dependency the game did not have.
+Nothing in the doc says what should happen when it is down.
+
+**Decision.** If the session cannot be established, the client builds the
+default forest at tier zero and plays anyway. The hint card says "Playing
+offline — nothing will be saved", the pouch dims, and the shop reports dark
+shelves rather than an empty catalogue. Requests abort after six seconds
+rather than racing a timer, so a host that accepts the socket and then goes
+quiet cannot hang the bootstrap.
+
+**Reasoning.** Phase 1's game is a complete thing on its own, and a dead API
+turning it into an error screen would be a worse trade than a squirrel that can
+still glide. The honesty matters more than the fallback though: a player who is
+not told their session is offline will assume their afternoon was saved.
+
+The abort is the part worth recording. The first version raced `session.start()`
+against a timer, which left a window where a slow registration succeeded *after*
+the game had already started offline — leaving a token belonging to a player
+whose world had been built without one. Aborting the request cancels it, so
+there is no late success to arrive.
+
+**What this does not decide.** There is no offline queue that replays on
+reconnect. Intents raised while offline stay pending for the session and are
+sent if the connection returns; a reload loses them. Anything more is Phase 3's
+problem, alongside the WebSocket.

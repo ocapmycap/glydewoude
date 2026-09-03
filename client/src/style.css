@@ -218,10 +218,148 @@ kbd {
   cursor: pointer;
 }
 
+/* --- pouch -------------------------------------------------------------- */
+
+.pouch {
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid var(--paper-edge);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.3s ease;
+}
+
+.pouch--offline {
+  opacity: 0.45;
+}
+
+.pouch-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  padding: 0 0.3rem;
+}
+
+.pouch-chip--empty {
+  opacity: 0.35;
+}
+
+.pouch-count {
+  font-weight: 700;
+}
+
+.pouch-label {
+  opacity: 0.6;
+  font-size: 0.72rem;
+}
+
+.pouch-pending {
+  color: var(--accent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.pouch-pending--visible {
+  opacity: 1;
+}
+
+/* --- shop panel --------------------------------------------------------- */
+
+/* Bottom-centre: the shop only appears while perched, when nothing is moving
+   and the squirrel is not the thing you need to watch. */
+.shop {
+  position: absolute;
+  left: 50%;
+  bottom: 1.25rem;
+  transform: translate(-50%, 0.75rem);
+  width: min(34rem, calc(100vw - 2rem));
+  padding: 0.9rem 1.1rem;
+  border: 1px solid var(--paper-edge);
+  border-radius: 0.9rem;
+  background: var(--paper);
+  box-shadow: 0 1rem 2rem rgba(34, 48, 31, 0.16);
+  font-size: 0.85rem;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.shop--visible {
+  pointer-events: auto;
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.shop h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+  letter-spacing: 0.03em;
+}
+
+.shop-list {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.shop-row {
+  display: grid;
+  grid-template-columns: 9rem 3rem 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.shop-tier {
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+}
+
+.shop-price {
+  opacity: 0.75;
+  font-size: 0.8rem;
+}
+
+.shop-buy {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--paper-edge);
+  border-radius: 0.5rem;
+  background: #fff;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.shop-buy:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.shop-buy:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.shop-empty,
+.shop-status {
+  margin: 0.5rem 0 0;
+  min-height: 1.2em;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hint,
   .toast,
-  .tuning {
+  .tuning,
+  .pouch,
+  .shop {
     transition: none;
   }
 }

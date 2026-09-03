@@ -7,11 +7,11 @@ glide across the canopy, catch a trunk on the far side, climb, and go again.
 question it existed to answer — *does the movement feel good?* — settled by
 playing it. That was the go/no-go gate for everything after it.
 
-**Phase 2 is half built.** Materials, accounts, Postgres persistence and the
-whole server-side economy exist and are tested. What does not exist yet is the
-wire between them: the client cannot call the server, so nothing you pick up
-survives a reload, and the shop trees now scattered through the forest have no
-counter to stand at. What is done and what is left is tracked item by item in
+**Phase 2 is done.** Land on a tree and you pocket what is cached there; land
+on a shop and you can spend it on a glide upgrade; reload the page and it is
+all still yours. Materials, accounts, Postgres persistence and the server-side
+economy are wired to the client and driven end to end. What is done and the one
+check still outstanding are tracked item by item in
 [`docs/phase-2-progress.md`](docs/phase-2-progress.md).
 
 Scope for both comes from the [product document](docs/glidewood-product-doc.md) §9.
@@ -20,11 +20,7 @@ Scope for both comes from the [product document](docs/glidewood-product-doc.md) 
 
 ## Run it locally, from scratch
 
-You need **Node.js 20 or newer** and npm. Nothing else — no database, no Docker,
-no API keys, no `.env` file. That is not leftover Phase 1 wording: the client
-has no transport to the server yet, so the game genuinely runs standalone.
-Running the backend is optional, and covered under
-[Running the server](#running-the-server).
+You need **Node.js 20 or newer** and npm.
 
 ```bash
 git clone https://github.com/ocapmycap/glydewoude.git
@@ -33,7 +29,15 @@ npm install
 npm run dev
 ```
 
-Then open **http://localhost:5173**. That is the whole setup.
+Then open **http://localhost:5173**. The game runs and flies with nothing else
+installed — no database, no Docker, no `.env`. It will say *"Playing offline —
+nothing will be saved"* on the opening card, and it means it: no account, tier
+zero, no shop.
+
+For the saving half — accounts, materials that survive a reload, a shop that
+sells you anything — you also need the server running, which needs Docker. See
+[Running the server](#running-the-server). Start it before `npm run dev` and the
+dev server proxies to it automatically; there is nothing to configure.
 
 ### Every script
 
@@ -55,14 +59,19 @@ Run all of these from the repository root.
 relative asset paths, so it works from any static host and any subpath without
 a rebuild — drop it on Vercel, Netlify or Cloudflare Pages.
 
-The backend does not need deploying alongside it yet. Nothing in the built
-bundle calls it.
+The bundle calls the API at the same origin it was served from. If the API
+lives somewhere else, point the build at it:
+
+```bash
+VITE_API_URL=https://api.example.com npm run build
+```
+
+A build deployed without a reachable API still works — it just plays offline.
 
 ### Running the server
 
-Optional, and only interesting if you are working on persistence or the
-economy — the game does not call it. It needs Docker for Postgres, and
-**Node 20.12 or newer**: the server scripts load `.env` with Node's own
+Needed for anything to be saved. It wants Docker for Postgres, and **Node
+20.12 or newer**: the server scripts load `.env` with Node's own
 `--env-file-if-exists` rather than a `dotenv` dependency, and that flag arrived
 in 20.12. The client is fine on any Node 20.
 
@@ -72,9 +81,12 @@ docker compose -f server/docker-compose.yml up -d   # Postgres on :5432
 npm start --workspace server                        # http://localhost:8787
 ```
 
-It applies pending migrations on boot. Endpoints, the seed script for a test
-player with materials already banked, and the design notes are in
-[`server/README.md`](server/README.md).
+It applies pending migrations on boot. With it up, `npm run dev` proxies `/api`
+and `/healthz` to port 8787, so the client's default API base can stay empty and
+nobody has to think about CORS locally.
+
+Endpoints, the seed script for a test player with materials already banked, and
+the design notes are in [`server/README.md`](server/README.md).
 
 ---
 
@@ -88,6 +100,7 @@ player with materials already banked, and the design notes are in
 | Click the canvas | Steer with the mouse instead (pointer lock; <kbd>Esc</kbd> releases) |
 | <kbd>R</kbd> | Return to the great oak |
 | <kbd>T</kbd> | Show or hide the glide tuning dials |
+| <kbd>1</kbd>–<kbd>4</kbd> | Buy that row's upgrade, while perched at a shop |
 
 **The one thing that is not obvious:** a glide only ever loses height. You get
 it back by flying *into* a tall tree — catch the trunk anywhere on its upper
@@ -98,13 +111,20 @@ you can reach one before you sink below its lowest branches.
 Diving buys ground speed at the cost of glide ratio; flaring slows you and
 softens the descent. Cruising untouched is the most efficient way to travel.
 
-**Shop trees are visible but inert.** Nine of them sit in the default forest,
-71 to 246 metres out, canopies coloured apart from the gold of an ordinary
-landmark so you can pick one out from the air. Landing on one opens the shop
-internally and raises a purchase intent if something asks for one — but there
-is no panel to press yet, and no server connection to answer it, so nothing
-happens on screen. Same for materials: you collect them by landing, and the
-HUD does not show them.
+**Materials come from landing.** Roughly half the trees have a cache on them,
+and arriving is the pickup — there is no separate collect button, because the
+landing is the thing you already had to earn. The strip at the top of the
+screen is your pouch. A dot beside it means the server has not confirmed
+something yet.
+
+**Shops are the mauve canopies.** Nine of them sit in the default forest, 71 to
+246 metres out, coloured apart from the gold of an ordinary landmark so you can
+pick one out from the air — finding one is the navigation half of the loop.
+Landing opens the counter and hands you back the mouse pointer; the panel shows
+what each upgrade costs *you*, greys out what you cannot afford, and a click or
+a number key buys it. Prices, tiers and your balance all live on the server, so
+a bought upgrade is a longer glide on your next launch and it is still there
+tomorrow.
 
 ### The tuning dials
 
@@ -122,7 +142,8 @@ local to your browser tab and reset on reload.
 client/          Three.js frontend — the game you actually play
   src/sim/         the glide loop, collection, shops. Pure JS: no Three.js, no DOM
   src/render/      everything that touches Three.js
-  src/ui/          input bindings, HUD, tuning panel
+  src/net/         the API client, the session, and the intent pump
+  src/ui/          input bindings, HUD, pouch, shop panel, tuning panel
   test/            headless tests, including the core glide-loop smoke test
 shared/          logic the client and the server both need
   src/             glide physics, forest generation, material caches, seeded RNG
@@ -140,6 +161,11 @@ reason the Three.js-free boundary below is enforced rather than encouraged.
 and browser globals. That is what lets the automated tests fly the *actual*
 game loop in Node rather than a test-only copy of it, and it is enforced by
 both ESLint and a test rather than left to good intentions.
+
+The same rule runs the other way for the network. `main.js` is the only module
+that reaches for the server; `sim/` may not import `net/` and may not call
+`fetch`, which is also enforced by a test. A simulation that could make a
+network call is a simulation that could not be replayed from a seed.
 
 ---
 
@@ -168,8 +194,13 @@ asserting each one ends in a real mid-air catch on a new tree. If altitude ever
 stopped being recoverable, that chain would collapse into ground recoveries and
 the test would fail.
 
+`client/test/sync.test.js` is the Phase 2 equivalent: it flies the same real
+simulation against a stand-in for the network and asserts the pickup is banked,
+the purchase reaches the physics, and a refusal is settled rather than retried
+forever.
+
 The rest covers glide-math invariants, worldgen determinism, landing volumes,
-the fixed-timestep loop, and the render boundary.
+the fixed-timestep loop, the session's token lifecycle, and both boundaries.
 
 Glide *feel* is not tested and deliberately so — the product document is
 explicit that feel-based systems resist automated testing (§7.4). That is what
