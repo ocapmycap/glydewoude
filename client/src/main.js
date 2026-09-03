@@ -13,6 +13,7 @@ import { createSimulation } from './sim/simulation.js';
 import { createInputState } from './sim/input-state.js';
 import { createLoop } from './sim/loop.js';
 import { createSession } from './net/session.js';
+import { createCollectionSync } from './net/collection-sync.js';
 import { createRenderer } from './render/renderer.js';
 import { createInputBindings } from './ui/input.js';
 import { createHud } from './ui/hud.js';
@@ -43,6 +44,20 @@ const world = player ? generateForest({ seed: player.worldSeed }) : generateFore
 const simulation = createSimulation({ world, stats: player?.glideStats });
 const renderer = createRenderer(canvas, world);
 const input = createInputState();
+
+// Seed the ledger's confirmed balance with what the server already banked, so a
+// returning player's materials are correct on the first frame rather than only
+// after their next pickup settles. An empty seq list settles nothing — it just
+// writes the authoritative totals in.
+if (player) simulation.collection.settle([], player.materials);
+
+// Relay collection intents to the server. Every landing that claims a cache
+// raises an intent; this drains the queue and writes back the server's verdict.
+// Offline it is a no-op, and the intents wait locally.
+const collectionSync = createCollectionSync({ session, collection: simulation.collection });
+simulation.on((event) => {
+  if (event.type === 'material:collected') collectionSync.flush();
+});
 
 const hud = createHud(overlay, simulation);
 const tuning = createTuningPanel(overlay, simulation);
