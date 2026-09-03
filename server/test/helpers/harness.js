@@ -88,12 +88,17 @@ export async function createHarness(overrides = {}) {
  * Call a route without opening a socket: build fake req/res objects and hand
  * them to the same handler the HTTP server uses.
  */
-export function request(app, method, path, { token, body, headers = {} } = {}) {
+export function request(app, method, path, { token, body, raw, headers = {} } = {}) {
   return new Promise((resolve) => {
     // A real Readable, not a hand-rolled emitter: authenticated routes await
     // the session lookup before they read the body, so anything that pushes
     // chunks eagerly loses them and the request hangs forever.
-    const payload = body === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(body));
+    //
+    // `raw` sends a body byte for byte, for the cases JSON.stringify cannot
+    // express — `1e999` parses back as Infinity, but stringifying Infinity
+    // gives `null`, so the only way to send one is to write it out.
+    const source = raw !== undefined ? raw : (body === undefined ? undefined : JSON.stringify(body));
+    const payload = source === undefined ? Buffer.alloc(0) : Buffer.from(source);
     const req = Readable.from(payload.length ? [payload] : []);
 
     req.method = method;

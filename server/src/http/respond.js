@@ -9,6 +9,7 @@ const STATUS_BY_REASON = Object.freeze({
   display_name_invalid: 400,
   malformed_claim: 400,
   malformed_position: 400,
+  malformed_run: 400,
   malformed_body: 400,
   unknown_upgrade: 400,
   invalid_tier: 400,

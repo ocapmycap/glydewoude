@@ -15,6 +15,7 @@ import { createServer } from 'node:http';
 import { createAuth } from './domain/auth.js';
 import { createEconomy, createWorldCache } from './domain/economy.js';
 import { catalogueFor } from './domain/upgrades.js';
+import { validateRunSubmission } from './domain/validation.js';
 import { createCacheRepo } from './repo/caches.js';
 import { createPlayerRepo } from './repo/players.js';
 import { createTransactionRepo } from './repo/transactions.js';
@@ -36,6 +37,7 @@ function publicPlayer(player) {
     inventoryCosmetics: player.inventoryCosmetics,
     equippedCosmetics: player.equippedCosmetics,
     lastPosition: player.lastPosition,
+    bestRun: player.bestRun,
     createdAt: player.createdAt,
   };
 }
@@ -117,6 +119,32 @@ export function createApp({ db, config }) {
     // so moving it far and fast is exactly what that check is looking for.
     await players.savePosition(playerId, { x, y, z }, new Date());
     sendJson(res, 200, { ok: true });
+  }));
+
+  /**
+   * Bank a finished run.
+   *
+   * The write is conditional on beating the stored best (D-28), so the reply
+   * is authoritative whichever way it went: `improved: false` and the best the
+   * client failed to beat, or `improved: true` and the run it just posted. A
+   * replayed request therefore cannot lower anything, which is why there is no
+   * idempotency key here.
+   *
+   * No ledger row. A run earns nothing, so it is not a transaction.
+   */
+  router.post('/api/player/run', withPlayer(async (req, res, { playerId }) => {
+    if (!allow(economyLimiter, playerId, res)) return;
+    const body = await readJsonBody(req);
+    if (!body.ok) return sendError(res, body.reason);
+
+    const submission = validateRunSubmission(body.value);
+    if (!submission.ok) return sendError(res, submission.reason, submission.detail);
+
+    const improved = await players.recordBestRun(playerId, submission.run, new Date());
+    const best = await players.bestRunFor(playerId);
+    if (!best) return sendError(res, 'unknown_player');
+
+    sendJson(res, 200, { best, improved });
   }));
 
   router.get('/api/shop/catalog', withPlayer(async (_req, res, { playerId }) => {

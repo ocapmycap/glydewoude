@@ -111,6 +111,195 @@ describe('save and load', () => {
   });
 });
 
+/** A well-formed run submission, with any field overridden. */
+function runBody(overrides = {}) {
+  return { score: 4820, chain: 7, distance: 1930, durationMs: 84_000, ...overrides };
+}
+
+describe('best run', () => {
+  it('starts at zero for a new player', async () => {
+    harness = await createHarness();
+    const { token } = await registerPlayer(harness.app);
+
+    const me = await request(harness.app, 'GET', '/api/player/me', { token });
+    expect(me.body.player.bestRun).toMatchObject({ score: 0, chain: 0, recordedAt: null });
+  });
+
+  it('stores a first run and says it improved', async () => {
+    harness = await createHarness();
+    const { token } = await registerPlayer(harness.app);
+
+    const posted = await request(harness.app, 'POST', '/api/player/run', {
+      token, body: runBody(),
+    });
+    expect(posted.status).toBe(200);
+    expect(posted.body.improved).toBe(true);
+    expect(posted.body.best).toMatchObject({ score: 4820, chain: 7, distance: 1930 });
+    expect(posted.body.best.recordedAt).toBeTruthy();
+  });
+
+  it('survives a reload, which is the whole point of storing it', async () => {
+    harness = await createHarness();
+    const { token } = await registerPlayer(harness.app);
+    await request(harness.app, 'POST', '/api/player/run', { token, body: runBody() });
+
+    const later = await request(harness.app, 'GET', '/api/player/me', { token });
+    expect(later.body.player.bestRun).toMatchObject({ score: 4820, chain: 7 });
+  });
+
+  it('keeps the better run and reports the worse one as no improvement', async () => {
+    harness = await createHarness();
+    const { token } = await registerPlayer(harness.app);
+    await request(harness.app, 'POST', '/api/player/run', {
+      token, body: runBody({ score: 5100, chain: 9 }),
+    });
+
+    const worse = await request(harness.app, 'POST', '/api/player/run', {
+      token, body: runBody({ score: 200, chain: 2 }),
+    });
+    expect(worse.body.improved).toBe(false);
+    // The reply is authoritative either way: it carries the best that stands,
+    // not the run that was just posted.
+    expect(worse.body.best).toMatchObject({ score: 5100, chain: 9 });
+  });
+
+  it('cannot be lowered by replaying the same request', async () => {
+    harness = await createHarness();
+    const { token } = await registerPlayer(harness.app);
+    const body = runBody({ score: 3000 });
+
+    await request(harness.app, 'POST', '/api/player/run', { token, body });
+    const replay = await request(harness.app, 'POST', '/api/player/run', { token, body });
+
+    // A replay ties its own stored score, so the conditional UPDATE matches
+    // nothing and the row is untouched.
+    expect(replay.body.improved).toBe(false);
+    expect(replay.body.best.score).toBe(3000);
+  });
+
+  it('lets two runs finishing at once settle on the higher one', async () => {
+    harness = await createHarness();
+    const { token } = await registerPlayer(harness.app);
+
+    const [low, high] = await Promise.all([
+      request(harness.app, 'POST', '/api/player/run', { token, body: runBody({ score: 1000 }) }),
+      request(harness.app, 'POST', '/api/player/run', { token, body: runBody({ score: 9000 }) }),
+    ]);
+    expect([low.status, high.status]).toEqual([200, 200]);
+
+    const me = await request(harness.app, 'GET', '/api/player/me', { token });
+    expect(me.body.player.bestRun.score).toBe(9000);
+  });
+
+  it('keeps the chain and distance of the run that won, not a per-column high', async () => {
+    harness = await createHarness();
+    const { token } = await registerPlayer(harness.app);
+    // A long, low-scoring plod, then a short, high-scoring dash.
+    await request(harness.app, 'POST', '/api/player/run', {
+      token, body: runBody({ score: 500, chain: 40, distance: 9000 }),
+    });
+    await request(harness.app, 'POST', '/api/player/run', {
+      token, body: runBody({ score: 6000, chain: 3, distance: 800 }),
+    });
+
+    const me = await request(harness.app, 'GET', '/api/player/me', { token });
+    expect(me.body.player.bestRun).toMatchObject({ score: 6000, chain: 3, distance: 800 });
+  });
+
+  it('keeps two players\' bests apart', async () => {
+    harness = await createHarness();
+    const one = await registerPlayer(harness.app, 'One');
+    const two = await registerPlayer(harness.app, 'Two');
+
+    await request(harness.app, 'POST', '/api/player/run', {
+      token: one.token, body: runBody({ score: 7777 }),
+    });
+
+    const other = await request(harness.app, 'GET', '/api/player/me', { token: two.token });
+    expect(other.body.player.bestRun.score).toBe(0);
+  });
+
+  it('writes no ledger row, because a run earns nothing', async () => {
+    harness = await createHarness();
+    const { token } = await registerPlayer(harness.app);
+    await request(harness.app, 'POST', '/api/player/run', { token, body: runBody() });
+
+    const log = await request(harness.app, 'GET', '/api/player/transactions', { token });
+    expect(log.body.transactions).toEqual([]);
+  });
+
+  it('needs a session like every other economy route', async () => {
+    harness = await createHarness();
+    const response = await request(harness.app, 'POST', '/api/player/run', { body: runBody() });
+    expect(response.status).toBe(401);
+  });
+
+  it('is rate limited', async () => {
+    harness = await createHarness({ rateLimit: { windowSeconds: 60, economyMax: 2 } });
+    const { token } = await registerPlayer(harness.app);
+
+    const statuses = [];
+    for (let i = 0; i < 3; i += 1) {
+      const response = await request(harness.app, 'POST', '/api/player/run', {
+        token, body: runBody({ score: 100 + i }),
+      });
+      statuses.push(response.status);
+    }
+    expect(statuses.at(-1)).toBe(429);
+  });
+});
+
+describe('a run the server will not store', () => {
+  const nonsense = {
+    'a negative score': runBody({ score: -1 }),
+    'a fractional chain': runBody({ chain: 2.5 }),
+    'a missing chain': { score: 10, distance: 10, durationMs: 10 },
+    'a null distance': runBody({ distance: null }),
+    'a score past the ceiling': runBody({ score: 1e12 }),
+    'a duration longer than a day': runBody({ durationMs: 48 * 60 * 60 * 1000 }),
+    'a string where a number belongs': runBody({ score: '9999' }),
+  };
+
+  for (const [description, body] of Object.entries(nonsense)) {
+    it(`rejects ${description}`, async () => {
+      harness = await createHarness();
+      const { token } = await registerPlayer(harness.app);
+      const response = await request(harness.app, 'POST', '/api/player/run', { token, body });
+      expect(response.status).toBe(400);
+      expect(response.body.error).toBe('malformed_run');
+    });
+  }
+
+  it('rejects an overflowing number rather than letting it reach the column', async () => {
+    // `Infinity` cannot survive JSON.stringify, so a client sends it as a
+    // literal too large to represent — which JSON.parse turns back into
+    // Infinity. Without the finite check that reaches an INTEGER column and
+    // becomes a 500.
+    harness = await createHarness();
+    const { token } = await registerPlayer(harness.app);
+    const response = await request(harness.app, 'POST', '/api/player/run', {
+      token,
+      headers: { 'content-type': 'application/json' },
+      raw: '{"score":1e999,"chain":3,"distance":10,"durationMs":10}',
+    });
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe('malformed_run');
+  });
+
+  it('leaves the stored best alone when it bounces one', async () => {
+    harness = await createHarness();
+    const { token } = await registerPlayer(harness.app);
+    await request(harness.app, 'POST', '/api/player/run', { token, body: runBody({ score: 400 }) });
+
+    await request(harness.app, 'POST', '/api/player/run', {
+      token, body: runBody({ score: Number.MAX_SAFE_INTEGER }),
+    });
+
+    const me = await request(harness.app, 'GET', '/api/player/me', { token });
+    expect(me.body.player.bestRun.score).toBe(400);
+  });
+});
+
 describe('the append-only ledger', () => {
   it('records an earn for every collection', async () => {
     harness = await createHarness();
