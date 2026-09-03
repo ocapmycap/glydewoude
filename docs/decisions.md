@@ -479,3 +479,32 @@ reason found the hard way. The first version used a single 15-second grace,
 which at top speed buys about 576 metres — wider than the entire forest, so no
 teleport was detectable and the check was decorative while appearing to work.
 A unit test now asserts the allowance stays smaller than the map.
+
+---
+
+## D-28 — A run score is client-reported
+
+**Ambiguity.** §6.1 makes the server the authority on anything the client
+claims. A run score is a number the client computes about its own play, which
+sounds exactly like the thing §6.1 exists to distrust.
+
+**Decision.** The client computes the score and the server stores what it is
+sent, updating a player's best only when the new score beats it. The server
+does not recompute the run.
+
+**Reasoning.** The same reasoning as `last_position` in `001_init.sql`: a
+spoofed value is cosmetic. A run score buys nothing, unlocks nothing, and is
+compared against nobody — run mode has no leaderboard by design, so the only
+person a cheated score deceives is the person who cheated it.
+
+Recomputing it properly would mean the client streaming its whole flight path
+for the server to re-simulate, which is a large amount of machinery to protect
+a number with no value attached.
+
+The scoring maths still lives in `shared/src/run.js` rather than in
+`client/src/sim/`, so a server that later needs to check a run imports the same
+functions the client used instead of reimplementing them.
+
+**Revisit when.** A run pays out materials, currency or an unlock, or a
+leaderboard exists. Either one gives the score value, §6.1 applies in full, and
+this decision has to be reopened.

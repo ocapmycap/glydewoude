@@ -161,3 +161,23 @@ export const MATERIAL_CONFIG = Object.freeze({
   /** Seed offset, so material placement does not consume the worldgen stream. */
   seedSalt: 0x9e3779b9,
 });
+
+/**
+ * Run mode's dials — see `run-mode-tasks.md`.
+ *
+ * Separate from GLIDE_TUNING on purpose, the same way BASE_GLIDE_STATS is:
+ * these change what a landing is *worth*, never how the squirrel flies. A
+ * value moved here can never alter a glide, which is what makes the score
+ * safe to retune without re-testing the physics.
+ */
+export const RUN_TUNING = Object.freeze({
+  /** Score multiplier gained per link already in the chain. */
+  chainStep: 0.25,
+  /** Ceiling on the multiplier, so a long chain cannot run away. */
+  maxMultiplier: 4,
+  /** Paid for landing on a tree the run has not used yet — rewards crossing
+   *  the forest over bouncing between the same two trunks. */
+  freshBonus: 1.5,
+  /** Below this many landings it was not a run, and nothing banks it. */
+  minChainToBank: 2,
+});
