@@ -9,6 +9,8 @@
  *   npm run seed --workspace server -- --name "Test Squirrel" --acorns 200
  */
 
+import '../load-env.js';
+
 import { loadConfig } from '../config.js';
 import { createDatabase } from './database.js';
 import { migrate } from './migrate.js';
