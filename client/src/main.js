@@ -14,6 +14,7 @@ import { createInputState } from './sim/input-state.js';
 import { createLoop } from './sim/loop.js';
 import { createSession } from './net/session.js';
 import { createCollectionSync } from './net/collection-sync.js';
+import { createPositionSync } from './net/position-sync.js';
 import { createRenderer } from './render/renderer.js';
 import { createInputBindings } from './ui/input.js';
 import { createHud } from './ui/hud.js';
@@ -55,8 +56,17 @@ if (player) simulation.collection.settle([], player.materials);
 // raises an intent; this drains the queue and writes back the server's verdict.
 // Offline it is a no-op, and the intents wait locally.
 const collectionSync = createCollectionSync({ session, collection: simulation.collection });
+
+// Keep the server's position anchor current. Collection already advances it,
+// but a landing that claims no cache would leave it stale, so save on every
+// arrival — landings and respawns alike.
+const positionSync = createPositionSync({ session });
+
 simulation.on((event) => {
   if (event.type === 'material:collected') collectionSync.flush();
+  if (event.type === 'glide:landed' || event.type === 'glide:respawned') {
+    positionSync.save(simulation.glider.motion);
+  }
 });
 
 const hud = createHud(overlay, simulation);
