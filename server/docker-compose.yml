@@ -1,0 +1,27 @@
+# Local Postgres for development (§7.3).
+#
+# The point of running the real engine locally rather than SQLite is to avoid
+# behaviour drift between dev and production — the product doc calls this out
+# specifically.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: glidewood-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: glidewood
+      POSTGRES_PASSWORD: glidewood
+      POSTGRES_DB: glidewood
+    ports:
+      - '5432:5432'
+    volumes:
+      - glidewood-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U glidewood']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  glidewood-pgdata:

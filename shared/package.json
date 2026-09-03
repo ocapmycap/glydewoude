@@ -1,0 +1,12 @@
+{
+  "name": "@glidewood/shared",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Constants and pure logic shared between the Glidewood client and (from Phase 2) the server.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./*": "./src/*.js"
+  }
+}
