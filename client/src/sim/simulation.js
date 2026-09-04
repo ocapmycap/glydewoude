@@ -13,6 +13,7 @@
 import {
   GLIDE_TUNING,
   BASE_GLIDE_STATS,
+  RUN_TUNING,
   TREE_TYPES,
   deriveGlideProfile,
   distance2D,
@@ -25,6 +26,7 @@ import { createCollectionLedger } from './collection.js';
 import { createInteractionRegistry, landmarkInteraction } from './interactions.js';
 import { GliderPhase, landOn, launch, perchOn, stepAirborne } from './glider.js';
 import { resolveLanding } from './landing.js';
+import { createRunTracker } from './run.js';
 import { resetEdges } from './input-state.js';
 
 /**
@@ -34,12 +36,16 @@ import { resetEdges } from './input-state.js';
  * @param {object} [options.tuning]  a mutable copy of GLIDE_TUNING for live tweaking
  * @param {Array<object>} [options.caches]  material caches; derived from the
  *   world seed if omitted, so client and server agree without syncing
+ * @param {object} [options.runTuning]  a mutable copy of RUN_TUNING for live tweaking
  */
 export function createSimulation(options = {}) {
   const world = options.world ?? generateForest();
   const stats = { ...BASE_GLIDE_STATS, ...(options.stats ?? {}) };
   // A mutable copy: the tuning panel edits this in place while the game runs.
   const tuning = { ...GLIDE_TUNING, ...(options.tuning ?? {}) };
+  // Kept apart from `tuning` for the same reason the frozen tables are: the
+  // scoring dials and the flight dials move for different reasons.
+  const runTuning = { ...RUN_TUNING, ...(options.runTuning ?? {}) };
 
   const interactions = createInteractionRegistry();
   interactions.register(TREE_TYPES.LANDMARK, landmarkInteraction);
@@ -47,6 +53,8 @@ export function createSimulation(options = {}) {
   const collection = createCollectionLedger({
     caches: options.caches ?? generateMaterialCaches(world),
   });
+
+  const runs = createRunTracker({ tuning: runTuning });
 
   const listeners = new Set();
   const emit = (event) => listeners.forEach((listener) => listener(event));
@@ -71,12 +79,26 @@ export function createSimulation(options = {}) {
     interactions.leave(from, context());
     glider = launch(glider, profile, tuning);
     emit({ type: 'glide:launched', tree: from });
+
+    // The first launch after a perch with no chain going opens a run; every
+    // launch in the middle of one is silent.
+    const started = runs.start(elapsed);
+    if (started) emit(started);
   }
 
   function doLand(tree, reason) {
     const finished = glider.glide;
     glider = landOn(glider, tree);
     emit({ type: 'glide:landed', tree, reason, glide: finished });
+
+    // Catching bark extends the chain; touching the ground ends it. The tree
+    // you scamper up after a fall scores nothing — it was not caught, and
+    // paying for it would make aiming at nothing a viable way to keep going.
+    const runEvent = reason === 'ground'
+      ? runs.end(elapsed, 'ground')
+      : runs.extend(tree, finished);
+    if (runEvent) emit(runEvent);
+
     interactions.land(tree, context());
 
     // Materials are claimed by arriving, which reuses the landing the player
@@ -90,6 +112,12 @@ export function createSimulation(options = {}) {
     if (from) interactions.leave(from, context());
     glider = perchOn(spawnTree);
     emit({ type: 'glide:respawned', tree: spawnTree });
+
+    // Going home is not a clean finish, but it must not leave a chain running
+    // either — the run ends here and the HUD can tell the two endings apart.
+    const ended = runs.end(elapsed, 'respawn');
+    if (ended) emit(ended);
+
     interactions.land(spawnTree, context());
   }
 
@@ -99,6 +127,7 @@ export function createSimulation(options = {}) {
     tuning,
     interactions,
     collection,
+    runTuning,
 
     /** Subscribe to simulation events; returns an unsubscribe function. */
     on(listener) {
@@ -114,6 +143,10 @@ export function createSimulation(options = {}) {
     },
     get elapsed() {
       return elapsed;
+    },
+    /** The run in progress, or null when perched with no chain going. */
+    get run() {
+      return runs.run;
     },
 
     /** Re-derive the profile after the tuning panel changes a dial. */
