@@ -511,7 +511,39 @@ this decision has to be reopened.
 
 ---
 
-## D-29 — The tree you scamper up after a fall scores nothing
+## D-29 — The best run is four columns on `players`, not a `runs` table
+
+**Ambiguity.** D-28 settles that the server stores what the client reports. It
+does not say how much of it to keep: every run, or only the best one.
+
+**Decision.** `players` gains `best_run_score`, `best_run_chain`,
+`best_run_distance` and `best_run_at`. No run history is stored, and the
+submitted `durationMs` is validated and then discarded.
+
+**Reasoning.** Nothing reads a history. There is no leaderboard, no replay and
+no payout (D-28), so a `runs` table would be a table that only ever grows and
+is only ever collapsed to a single `MAX(score)`. Storing the aggregate
+directly makes the write one conditional `UPDATE ... WHERE best_run_score <
+$1` — the same shape as the conditional debit in the purchase path, and the
+same guarantee: two runs finishing at once cannot both win, and the lower of
+the two cannot land second and overwrite the higher.
+
+A tie is deliberately not an improvement. That is what makes a replayed
+request a no-op rather than a way to bump `best_run_at` forward.
+
+Chain and distance travel with the score instead of being compared column by
+column, so the stored best is one real flight rather than a composite
+assembled from three different ones.
+
+`durationMs` is bounded like the rest and then dropped because nothing shows
+it — the HUD has three numbers and this is not one of them. It stays in the
+request body so that a later "longest run" needs no client change.
+
+**Revisit when.** A run history is worth showing — a graph of your last twenty
+runs, or a per-session summary. That is a `runs` table and a migration that
+backfills the current best as a single row.
+
+## D-30 — The tree you scamper up after a fall scores nothing
 
 **Ambiguity.** Ground contact produces a `glide:landed` event like any other,
 carrying a real tree and a real glide distance — `landing.js` puts the squirrel
@@ -532,7 +564,7 @@ away when a run ends, so the ending needs no compensation to feel fair.
 
 ---
 
-## D-30 — The run tracker returns events; `createSimulation` emits them
+## D-31 — The run tracker returns events; `createSimulation` emits them
 
 **Ambiguity.** `client/src/sim/` has two patterns for a stateful module that
 needs to tell the UI something. Interaction handlers are handed an `emit` and

@@ -108,3 +108,66 @@ export function validateCollection({ claim, cachesById, player, alreadyCollected
 
   return { ok: true, cache };
 }
+
+/**
+ * Bounds on a submitted run.
+ *
+ * These are not anti-cheat — D-28 says a run score is client-reported and a
+ * spoofed one buys nothing. They exist because the columns are `INTEGER`: a
+ * number past 2^31 would come back as a database error and a 500, when the
+ * honest answer is that the client sent nonsense. Every ceiling sits far above
+ * anything a real run reaches and far below where the column breaks.
+ */
+export const RUN_LIMITS = Object.freeze({
+  maxScore: 100_000_000,
+  maxChain: 10_000,
+  maxDistance: 10_000_000,
+  maxDurationMs: 24 * 60 * 60 * 1000,
+});
+
+/** A finite number in [0, max]. `Infinity` reaches here from JSON as `1e999`. */
+function withinBounds(value, max) {
+  return Number.isFinite(value) && value >= 0 && value <= max;
+}
+
+/**
+ * Validate a finished run before it is offered to the best-run update.
+ *
+ * Pure, and shaped like `/api/player/position`'s own check: the numbers have
+ * to be finite, non-negative and sane, or the request bounces rather than
+ * storing rubbish.
+ *
+ * `durationMs` is bounded but not returned — nothing stores it. A best run
+ * keeps score, chain and distance, and how long it took is not one of the
+ * three things the HUD shows.
+ *
+ * @param {object} body  the parsed request body
+ * @returns {{ok: true, run: {score: number, chain: number, distance: number}}
+ *          | {ok: false, reason: string, detail?: object}}
+ */
+export function validateRunSubmission(body) {
+  if (!body || typeof body !== 'object') return { ok: false, reason: 'malformed_run' };
+
+  const { score, chain, distance, durationMs } = body;
+
+  if (!withinBounds(score, RUN_LIMITS.maxScore)) {
+    return { ok: false, reason: 'malformed_run', detail: { field: 'score' } };
+  }
+  if (!Number.isInteger(chain) || !withinBounds(chain, RUN_LIMITS.maxChain)) {
+    return { ok: false, reason: 'malformed_run', detail: { field: 'chain' } };
+  }
+  if (!withinBounds(distance, RUN_LIMITS.maxDistance)) {
+    return { ok: false, reason: 'malformed_run', detail: { field: 'distance' } };
+  }
+  if (!withinBounds(durationMs, RUN_LIMITS.maxDurationMs)) {
+    return { ok: false, reason: 'malformed_run', detail: { field: 'durationMs' } };
+  }
+
+  // Score is already an integer by the time `extendRun` is done with it;
+  // distance is raw metres and is not. Rounding here rather than in the
+  // repository keeps the SQL free of any opinion about the numbers.
+  return {
+    ok: true,
+    run: { score: Math.round(score), chain, distance: Math.round(distance) },
+  };
+}

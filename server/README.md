@@ -152,6 +152,7 @@ All economy routes need `Authorization: Bearer <token>`.
 | `POST` | `/api/auth/logout` | revoke the current token |
 | `GET` | `/api/player/me` | full player state |
 | `POST` | `/api/player/position` | save last position (client-reported) |
+| `POST` | `/api/player/run` | bank a finished run, keeping only the best |
 | `GET` | `/api/shop/catalog` | upgrades and this player's next prices |
 | `POST` | `/api/collect` | bank a material cache |
 | `POST` | `/api/shop/purchase` | buy the next tier of an upgrade |
