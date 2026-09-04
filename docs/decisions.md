@@ -542,3 +542,46 @@ request body so that a later "longest run" needs no client change.
 **Revisit when.** A run history is worth showing — a graph of your last twenty
 runs, or a per-session summary. That is a `runs` table and a migration that
 backfills the current best as a single row.
+
+## D-30 — The tree you scamper up after a fall scores nothing
+
+**Ambiguity.** Ground contact produces a `glide:landed` event like any other,
+carrying a real tree and a real glide distance — `landing.js` puts the squirrel
+on the nearest trunk. Run mode could treat that as one last link in the chain
+before ending it, or as no link at all.
+
+**Decision.** A landing with `reason === 'ground'` ends the run and adds
+nothing. Only `reason === 'perch'` calls `extendRun`.
+
+**Reasoning.** The whole point of run mode is that aiming has a consequence.
+Paying for the recovery trunk would mean a player who aims at nothing still
+banks the distance they fell across, which is the same score a player who
+actually caught the tree would get — the two outcomes would be worth the same
+again, and that is the state run mode exists to leave behind.
+
+It also keeps the cosy rule honest in the other direction. Nothing is taken
+away when a run ends, so the ending needs no compensation to feel fair.
+
+---
+
+## D-31 — The run tracker returns events; `createSimulation` emits them
+
+**Ambiguity.** `client/src/sim/` has two patterns for a stateful module that
+needs to tell the UI something. Interaction handlers are handed an `emit` and
+call it themselves; `createCollectionLedger.collectAt` returns an intent and
+lets its caller emit.
+
+**Decision.** `createRunTracker` follows the ledger: `start`, `extend` and
+`end` each return an event object or `null`, and `createSimulation` emits what
+comes back.
+
+**Reasoning.** Three parallel branches subscribe to these events, so the order
+a subscriber sees `glide:landed`, `run:extended` and `material:collected` in is
+part of the contract. Every `emit` call for those three sits in one function in
+`simulation.js`, where that order can be read off the page instead of
+reconstructed across two modules.
+
+The cost is one line of ceremony at each call site — `if (event) emit(event)` —
+and a tracker that cannot raise an event nobody asked it for. Both seemed worth
+it. The `emit`-passing pattern stays the right one for interaction handlers,
+which fire at moments their caller does not otherwise care about.
