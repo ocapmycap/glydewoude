@@ -7,8 +7,9 @@ RUN apt-get update && apt-get install -y \
   jq \
   && rm -rf /var/lib/apt/lists/*
 
-# Issue tracker: Linear, reached over its GraphQL API with the curl and jq
-# installed above, so no tracker CLI is needed. Auth is LINEAR_API_KEY from .env.
+# Issue tracker: Linear, read via .sandcastle/tracker/tracker.mjs, which main.ts
+# mounts at /home/agent/tracker. It needs only node (for fetch), which the base
+# image has. Auth is LINEAR_API_KEY from .env.
 
 # Build-args for UID/GID alignment: sandcastle docker build-image
 # defaults these to the host user's UID/GID so image-built files

@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git rebase:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git checkout:*)",
+      "Bash(git switch:*)",
+      "Bash(git branch -D:*)",
+      "Bash(git worktree:*)",
+      "Bash(git clean:*)",
+      "Bash(git stash:*)",
+      "Bash(npm publish:*)",
+      "Read(**/.env*)",
+      "Edit(**/.env*)",
+      "Edit(.sandcastle/**)"
+    ]
+  }
+}
