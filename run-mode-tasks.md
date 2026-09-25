@@ -1,14 +1,6 @@
-Base your work on the devel branch. Open your PR against devel.
-
-Read CLAUDE.md and docs/decisions.md first and follow the existing
-conventions. Do not restructure anything outside your own area.
-
-Five sessions are working on this feature in parallel. Keep your changes
-confined to the files your ticket lists. If you must touch a shared file,
-make the change purely additive — do not reorganize, rename, or reformat
-it. Do not modify CLAUDE.md.
-
-Where the spec is ambiguous, choose and proceed. Do not wait for me.
+**Status (2026-09-25):** T1–T3 are merged. T4 and T5 now live in Linear, in the
+Glidewood project: T5 is LAN-516 and T4 is LAN-517. Track them there. This file stays
+as the design record and the contract both tickets build against.
 
 ---
 

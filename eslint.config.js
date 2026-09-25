@@ -49,4 +49,11 @@ export default [
       globals: { ...globals.node, ...globals.es2023 },
     },
   },
+  {
+    // The Sandcastle tracker runs under Node, on the host and in the sandbox.
+    files: ['.sandcastle/**/*.mjs'],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.es2023 },
+    },
+  },
 ];
