@@ -15,6 +15,7 @@ import { createLoop } from './sim/loop.js';
 import { createSession } from './net/session.js';
 import { createCollectionSync } from './net/collection-sync.js';
 import { createPositionSync } from './net/position-sync.js';
+import { createRunSync } from './net/run-sync.js';
 import { createRenderer } from './render/renderer.js';
 import { createInputBindings } from './ui/input.js';
 import { createHud } from './ui/hud.js';
@@ -69,6 +70,10 @@ simulation.on((event) => {
     positionSync.save(simulation.glider.motion);
   }
 });
+
+// Bank a finished run against the server's best. It subscribes itself to
+// `run:ended`; the run HUD (T4) can read `.best` and `.onBest` once it lands.
+createRunSync({ session, simulation });
 
 const hud = createHud(overlay, simulation);
 const tuning = createTuningPanel(overlay, simulation);

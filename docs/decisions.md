@@ -585,3 +585,24 @@ The cost is one line of ceremony at each call site — `if (event) emit(event)` 
 and a tracker that cannot raise an event nobody asked it for. Both seemed worth
 it. The `emit`-passing pattern stays the right one for interaction handlers,
 which fire at moments their caller does not otherwise care about.
+
+## D-32 — The run sync seeds its best from the session and hands it on by subscription
+
+**Ambiguity.** T5 says to skip a run that "cannot beat the best the server
+already returned" and to hand the best "to whatever displays it", but not where
+the first known best comes from, whether a tie can beat it, or how the display
+gets it. It also allows only one wiring line in `main.js`.
+
+**Decision.** `createRunSync({ session, simulation })` starts from
+`session.player.bestRun`, which `/api/player/me` and register already return.
+A run is posted only if its score is strictly greater than that best, matching
+the server's `best_run_score < $2`. The sync subscribes itself to `run:ended`,
+so `main.js` needs one line, and it exposes `best` plus `onBest(listener)` for
+the run HUD (T4) to read.
+
+**Reasoning.** Seeding from the session means the local check works on the
+first run after a reload, not only after the first post. A tie cannot win on
+the server, so posting one would waste the request the ticket says to save. A
+subscription rather than a constructor callback means T4 can attach to the
+sync without editing the line that builds it, which keeps the `main.js`
+conflict the ticket expects small.
