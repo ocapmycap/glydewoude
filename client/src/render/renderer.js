@@ -21,6 +21,7 @@ import {
 
 import { PALETTE, toonMaterial } from './materials.js';
 import { createForest } from './trees.js';
+import { createStructures } from './structures.js';
 import { createSquirrel } from './squirrel.js';
 import { createFollowCamera } from './follow-camera.js';
 
@@ -52,6 +53,7 @@ export function createRenderer(canvas, world) {
   scene.add(ground);
 
   scene.add(createForest(world));
+  scene.add(createStructures(world));
 
   const squirrel = createSquirrel();
   scene.add(squirrel.object);

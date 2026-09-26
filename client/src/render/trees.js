@@ -40,12 +40,19 @@ const OUTLINE_SCALE = 1.035;
  * out of the top of the tree. Get this wrong and the camera spawns inside the
  * canopy looking at the inside of the outline hull.
  */
-const CANOPY_DROP = 0.86;
-const CANOPY_BLOBS = [
+export const CANOPY_DROP = 0.86;
+export const CANOPY_BLOBS = [
   { x: 0, y: 0.05, z: 0, scale: 1 },
   { x: 0.45, y: -0.35, z: 0.25, scale: 0.62 },
   { x: -0.4, y: -0.3, z: -0.3, scale: 0.55 },
 ];
+
+/**
+ * How much the canopy blobs are squashed vertically relative to their
+ * horizontal radius. Exported so structures.js can find the drawn canopy's
+ * surface instead of guessing at a second copy of this number (D-48).
+ */
+export const CANOPY_VERTICAL_SQUASH = 0.78;
 
 /**
  * Smaller leaf clusters hung around the rim of each canopy, placed per tree
@@ -240,7 +247,7 @@ export function createForest(world) {
       );
       dummy.rotation.set(blob.spin, treeIndex * 0.7 + blob.spin, blob.scale);
       // Squash slightly: canopies read better wider than they are tall.
-      dummy.scale.set(radius, radius * 0.78, radius);
+      dummy.scale.set(radius, radius * CANOPY_VERTICAL_SQUASH, radius);
       dummy.updateMatrix();
       canopies.setMatrixAt(canopyIndex, dummy.matrix);
       canopyOutlines.setMatrixAt(canopyIndex, hull.multiplyMatrices(dummy.matrix, scaleUp));

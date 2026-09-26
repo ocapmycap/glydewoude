@@ -794,3 +794,24 @@ still on screen. Under `prefers-reduced-motion` it only fades.
 is that the CSS names today's thresholds, and a retune falls back to the
 plain style instead of breaking. One timer from one constant means the
 element cannot outlive its animation.
+
+## D-48 — Structures are pushed out to the drawn canopy's rim, not placed literally
+
+**Ambiguity.** LAN-524 draws `tree.structures` (D-40) at `position + offset`,
+but that offset was rolled against `canopyRadius` and `canopyDepth`, not
+against the canopy trees.js actually draws. Measured across the forest, most
+rolls land a median 2.5 m (up to ~5.5 m) inside the drawn foliage blob, so a
+literal placement is invisible from the air.
+
+**Decision.** `structures.js` keeps a structure's height, bearing and yaw
+exactly as worldgen rolled them, and pushes only the horizontal distance
+outward — never inward — to the surface of the ellipsoid trees.js actually
+draws for the main canopy blob (`CANOPY_DROP` and the vertical squash,
+exported from `trees.js` rather than copied). The great tree's canopy is four
+cones (`great-tree.js`), not that ellipsoid; its platform already measured
+close to a tier's surface, so it is placed literally.
+
+**Reasoning.** Reusing `trees.js`'s own numbers keeps this a rendering-only
+fix — worldgen, landing and catch radii are untouched, and the drey or
+platform a player sees now matches the canopy silhouette it is supposed to
+sit in.
