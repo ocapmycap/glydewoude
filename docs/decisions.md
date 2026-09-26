@@ -675,3 +675,28 @@ only: perch and catch radii are untouched.
 **Reasoning.** The instance count grows with the forest, but the draw-call
 count stays at four. Seeding from the id rather than the array index keeps a
 tree's look stable if worldgen later inserts or reorders trees.
+
+## D-40 — Structures ride the world rng after the trees, relative to the trunk base
+
+**Ambiguity.** LAN-520 asks for drey and platform placement drawn from the
+seeded worldgen RNG, "relative to the tree", but does not say where in the rng
+stream to draw them, what point the offset is measured from, or what "inside or
+just under the canopy" means as numbers.
+
+**Decision.** `generateForest` builds every tree exactly as before, then makes
+one more pass in tree order and gives each destination tree its `structures`
+from the same rng, continuing its stream. Scenery trees get `[]` and draw
+nothing. `offset` is measured from `tree.position`, the trunk base, so the
+renderer places a structure at `position + offset`. Horizontally it sits
+between 25% and 70% of `canopyRadius` from the trunk. Vertically it sits
+between 10% and 45% of `canopyDepth` below the perch. `rotation` is a
+yaw in [0, 2π). Destination trees get one or two structures of either kind,
+evenly. The great tree's first structure is always a platform.
+
+**Reasoning.** Drawing inside the construction loop would shift every later
+tree's height, radius and destination roll, so the whole forest would change
+for a decoration. Doing it afterwards keeps the layout, the D-8 share and
+every existing test as they were. The vertical band uses `canopyDepth`, which
+`WORLD_CONFIG` already matches to how far the drawn foliage hangs, so a
+structure is never floating above the leaves or buried near the ground. Structures are data only.
+`perchRadius`, `catchRadius` and landing do not read them.
