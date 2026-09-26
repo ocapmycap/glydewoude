@@ -773,3 +773,24 @@ keeps `barkGreat`.
 **Reasoning.** Russet sets the great tree apart from the gold destination
 canopies (`canopyDestination`) and the green forest while keeping the palette
 warm. Mixing it with green keeps the tree inside the low-saturation look.
+
+## D-46 — Milestone bursts are ranked in CSS, keyed on the event's chain
+
+**Ambiguity.** LAN-523 wants 10 to be louder than 3, but also says the burst
+must read the chain from the event and compute nothing. Ranking a milestone
+against the others would mean reading `RUN_TUNING.milestoneChains`.
+
+**Decision.** `createMilestoneBurst` writes the event's chain into
+`data-chain` and the text "Chain of N!". `style.css` gives `3` the base pill,
+`5` a larger accent-coloured one, and `10` the largest, bolder with a warm
+glow. A chain with no rule of its own (after a retune) gets the base style.
+Each burst is one element with a single 1.5 s CSS animation (pop in, hold,
+fade up and out). The JS constant `BURST_MS` sets both the animation length,
+through `--burst-ms`, and the removal timer. The burst sits at `top: 34vh`,
+above the squirrel and below the end-of-run card. A new burst replaces one
+still on screen. Under `prefers-reduced-motion` it only fades.
+
+**Reasoning.** Attribute selectors keep the module a pure listener. The cost
+is that the CSS names today's thresholds, and a retune falls back to the
+plain style instead of breaking. One timer from one constant means the
+element cannot outlive its animation.

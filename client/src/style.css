@@ -447,3 +447,81 @@ kbd {
     transition: none;
   }
 }
+
+/* --- milestone burst ---------------------------------------------------- */
+
+/* Above the squirrel and below the end-of-run card, so it never sits on the
+   glider. It pops in, holds, and fades in one animation whose length comes
+   from the module (--burst-ms), and is removed when it ends. Size carries the
+   size of the moment: 10 is louder than 5, 5 louder than 3 (D-46). */
+.milestone-burst {
+  position: absolute;
+  top: 34vh;
+  left: 50%;
+  padding: 0.35rem 1rem;
+  border: 1px solid var(--paper-edge);
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: 0 0.75rem 1.5rem rgba(34, 48, 31, 0.14);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 0) scale(0.6);
+  animation: milestone-burst var(--burst-ms, 1500ms) ease-out forwards;
+}
+
+.milestone-burst[data-chain='5'] {
+  font-size: 1.45rem;
+  color: var(--accent);
+}
+
+.milestone-burst[data-chain='10'] {
+  padding: 0.5rem 1.4rem;
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: var(--accent);
+  box-shadow: 0 1rem 2rem rgba(178, 112, 60, 0.28);
+}
+
+@keyframes milestone-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.6);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.06);
+  }
+  28% {
+    transform: translate(-50%, 0) scale(1);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -0.75rem) scale(1);
+  }
+}
+
+/* Same lifetime, no pop or drift: a plain fade in and out. */
+@keyframes milestone-burst-still {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  15%,
+  70% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .milestone-burst {
+    transform: translate(-50%, 0);
+    animation-name: milestone-burst-still;
+  }
+}

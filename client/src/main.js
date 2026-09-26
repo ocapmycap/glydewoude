@@ -23,6 +23,7 @@ import { createTuningPanel } from './ui/tuning-panel.js';
 import { createShop } from './ui/shop.js';
 import { createRunHud } from './ui/run-hud.js';
 import { createLeafBurst } from './render/leaf-burst.js';
+import { createMilestoneBurst } from './ui/milestone-burst.js';
 
 import './style.css';
 
@@ -118,3 +119,6 @@ loop.start();
 // squirrel missed, and the tree it scampers up was not caught.
 const leafBurst = createLeafBurst(renderer.scene);
 simulation.on((event) => event.type === 'glide:landed' && event.reason === 'perch' && leafBurst.burst(event.tree));
+
+// A brief "Chain of 5!" whenever a run reaches a milestone.
+createMilestoneBurst(overlay, simulation);
