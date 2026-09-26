@@ -606,3 +606,26 @@ the server, so posting one would waste the request the ticket says to save. A
 subscription rather than a constructor callback means T4 can attach to the
 sync without editing the line that builds it, which keeps the `main.js`
 conflict the ticket expects small.
+
+## D-34 — The run HUD names the sync, keeps a session best, and skips unbankable runs
+
+**Ambiguity.** T4 asks for "your best" and a verdict on whether the run beat
+it, but T5's sync only learns a best from the server, and the `main.js` line
+that builds it discarded the return value. The ticket also does not say what a
+one-landing run shows when it ends, or whether a respawn counts.
+
+**Decision.** `main.js` now keeps the sync as `const runSync = createRunSync(...)`
+— a change to T5's line rather than a pure append, because there was no other
+way to reach `best` and `onBest`. The HUD shows the higher of the sync's best
+and a best it keeps for this session, so offline play still has a best that
+simply does not survive a reload. A run below `minChainToBank` updates the
+counters but raises no end card and never counts as a best, matching
+`isBankable` in the sync. Ground and respawn endings both get the card; only
+the title differs ("run over" or "home again").
+
+**Reasoning.** The session best is a `Math.max` over final scores the
+simulation already computed, so the HUD still does no run arithmetic. Using
+`isBankable` for the card means the HUD and the server agree on what counts as
+a run. The verdict is judged against the best known *before* the run ended —
+the sync's server round-trip resolves later and can only raise the best, which
+`onBest` then shows.

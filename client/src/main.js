@@ -21,6 +21,7 @@ import { createInputBindings } from './ui/input.js';
 import { createHud } from './ui/hud.js';
 import { createTuningPanel } from './ui/tuning-panel.js';
 import { createShop } from './ui/shop.js';
+import { createRunHud } from './ui/run-hud.js';
 
 import './style.css';
 
@@ -73,11 +74,12 @@ simulation.on((event) => {
 
 // Bank a finished run against the server's best. It subscribes itself to
 // `run:ended`; the run HUD (T4) can read `.best` and `.onBest` once it lands.
-createRunSync({ session, simulation });
+const runSync = createRunSync({ session, simulation });
 
 const hud = createHud(overlay, simulation);
 const tuning = createTuningPanel(overlay, simulation);
 const shop = createShop(overlay, { session, simulation });
+createRunHud(overlay, { simulation, runSync });
 const bindings = createInputBindings(input, canvas, {
   onToggleTuning: () => tuning.toggle(),
   onToggleShop: () => shop.toggle(),
