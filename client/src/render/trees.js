@@ -1,10 +1,12 @@
 /**
  * Forest geometry.
  *
- * The whole forest is four InstancedMeshes — trunk, canopy, and an inverted
- * hull for each — so a two-hundred-tree world costs a handful of draw calls
- * rather than eight hundred. Viral browser games get opened on whatever device
+ * The forest is four InstancedMeshes — trunk, canopy, and an inverted hull
+ * for each — so a two-hundred-tree world costs a handful of draw calls rather
+ * than eight hundred. Viral browser games get opened on whatever device
  * happens to be in someone's hand, and the doc expects traffic spikes (§10).
+ * The great tree (the spawn landmark) is drawn separately in great-tree.js —
+ * it is unique, so it can afford its own mesh instead of an instance slot.
  *
  * Detail is added without adding draw calls: bark grain is one shared canvas
  * texture, leaf tufts are extra instances of the canopy mesh, and per-tree
@@ -26,6 +28,7 @@ import {
 import { createRng, hashSeed, randRange } from '@glidewood/shared';
 
 import { PALETTE, mixColor, outlineMaterial, toonMaterial } from './materials.js';
+import { createGreatTree } from './great-tree.js';
 
 /** How much bigger the inverted hull is than the mesh it outlines. */
 const OUTLINE_SCALE = 1.035;
@@ -181,14 +184,19 @@ export function createForest(world) {
   const group = new Group();
   group.name = 'forest';
 
+  // The great tree draws itself; everything else is instanced.
+  const trees = world.trees.filter((tree) => tree.id !== world.spawnTreeId);
+  const greatTree = world.trees.find((tree) => tree.id === world.spawnTreeId);
+
   const trunkGeometry = new CylinderGeometry(0.75, 1, 1, 7, 1);
   // Detail 0 keeps the canopy a faceted low-poly blob rather than a ball.
   const canopyGeometry = createCanopyGeometry();
 
-  const trunkCount = world.trees.length;
-  const canopyCount = world.trees.length * (CANOPY_BLOBS.length + TUFTS_PER_TREE);
+  const trunkCount = trees.length;
+  const canopyCount = trees.length * (CANOPY_BLOBS.length + TUFTS_PER_TREE);
 
-  const trunkMaterial = toonMaterial(0xffffff, { map: createBarkTexture() });
+  const barkTexture = createBarkTexture();
+  const trunkMaterial = toonMaterial(0xffffff, { map: barkTexture });
   const trunks = buildInstanced(trunkGeometry, trunkMaterial, trunkCount);
   const canopies = buildInstanced(canopyGeometry, toonMaterial(0xffffff), canopyCount);
   const trunkOutlines = buildInstanced(trunkGeometry, outlineMaterial(), trunkCount);
@@ -200,8 +208,7 @@ export function createForest(world) {
 
   let canopyIndex = 0;
 
-  world.trees.forEach((tree, treeIndex) => {
-    const isGreat = tree.id === world.spawnTreeId;
+  trees.forEach((tree, treeIndex) => {
     const rng = treeRng(tree);
 
     // Trunk: a unit cylinder scaled to the tree, with its base on the ground.
@@ -215,10 +222,7 @@ export function createForest(world) {
     dummy.updateMatrix();
     trunks.setMatrixAt(treeIndex, dummy.matrix);
     trunkOutlines.setMatrixAt(treeIndex, hull.multiplyMatrices(dummy.matrix, scaleUp));
-    trunks.setColorAt(
-      treeIndex,
-      mixColor(PALETTE.bark, PALETTE.barkGreat, isGreat ? 1 : randRange(rng, 0, 0.6)),
-    );
+    trunks.setColorAt(treeIndex, mixColor(PALETTE.bark, PALETTE.barkGreat, randRange(rng, 0, 0.6)));
 
     // Destination gold only drifts a little toward green, so it still reads
     // as "worth landing on" from the air.
@@ -252,5 +256,8 @@ export function createForest(world) {
 
   // Outlines first so the solid geometry draws over their front faces.
   group.add(trunkOutlines, canopyOutlines, trunks, canopies);
+
+  if (greatTree) group.add(createGreatTree(greatTree, { barkTexture }));
+
   return group;
 }

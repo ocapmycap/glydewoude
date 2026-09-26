@@ -739,3 +739,37 @@ shrinks to nothing over the last 45% of its life. The material stays opaque.
 and the outline hull intact. A transparent material would need a custom
 shader for per-instance alpha, and it would also cause sorting artefacts
 against the canopy.
+
+## D-44 — The great tree is its own mesh, drawn in `great-tree.js`
+
+**Ambiguity.** LAN-522 allows the great tree to be drawn in `trees.js` or in a
+new module. It also leaves open whether the instanced forest should still keep
+a slot for it underneath the new drawing.
+
+**Decision.** `createForest` leaves the spawn tree out of the instanced meshes
+and adds `createGreatTree(tree, { barkTexture })` to the forest group. The
+great tree has a twisting trunk with a lobed root flare, 1.3× thicker than
+its worldgen radius, and a canopy of four flattened cones that narrow as they
+go up. The top tier's apex sits about 1.2 m below `perchY`, so the spawn
+camera stays clear of the foliage. The trunk's outline hull scales across the
+trunk only, so it cannot rise above the perch. Perch and catch radii come from
+worldgen and are unchanged.
+
+**Reasoning.** A separate module keeps `trees.js` about the instanced forest.
+The great tree costs about ten extra draw calls, once. `renderer.js` is
+unchanged because the forest group still holds everything. Tiered cones give
+an outline that no blob tree has, so the tree can be recognised by shape
+alone.
+
+## D-45 — `PALETTE.greatAccent` is a warm russet used only by the great tree
+
+**Ambiguity.** The issue suggests an optional warm accent colour from
+`PALETTE`, used nowhere else, but no such entry existed.
+
+**Decision.** Added `greatAccent: 0xc8643a` to `PALETTE`. Each canopy tier
+mixes canopy green toward it, and the top tier is the warmest. The trunk
+keeps `barkGreat`.
+
+**Reasoning.** Russet sets the great tree apart from the gold destination
+canopies (`canopyDestination`) and the green forest while keeping the palette
+warm. Mixing it with green keeps the tree inside the low-saturation look.
