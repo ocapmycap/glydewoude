@@ -9,7 +9,8 @@
  * The tracker returns event objects rather than emitting them, the same way
  * `createCollectionLedger.collectAt` returns an intent for its caller to emit.
  * That keeps every `emit` call in `simulation.js`, so the order a subscriber
- * sees events in is readable in one file instead of two.
+ * sees events in is readable in one file instead of two. `extend` returns an
+ * array, since one landing can raise both `run:extended` and `run:milestone`.
  *
  * Pure JS: no Three.js, no DOM, no clock. Simulation time arrives as an
  * argument, so a replay produces identical runs.
@@ -19,11 +20,12 @@ import { RUN_TUNING, endRun, extendRun, startRun } from '@glidewood/shared';
 
 /**
  * @typedef {object} RunEvent
- * @property {'run:started'|'run:extended'|'run:ended'} type
+ * @property {'run:started'|'run:extended'|'run:ended'|'run:milestone'} type
  * @property {object} run       the full run object from shared/src/run.js
  * @property {object} [tree]    the tree just caught, on `run:extended`
  * @property {number} [points]  points this landing added, on `run:extended`
  * @property {'ground'|'respawn'} [reason]  why it stopped, on `run:ended`
+ * @property {number} [chain]   the threshold just reached, on `run:milestone`
  */
 
 /**
@@ -33,6 +35,8 @@ import { RUN_TUNING, endRun, extendRun, startRun } from '@glidewood/shared';
 export function createRunTracker({ tuning = RUN_TUNING } = {}) {
   /** The run in progress, or null when perched with no chain going. */
   let current = null;
+  /** Milestone chains already fired for the run in progress, reset on start. */
+  let firedMilestones = new Set();
 
   return {
     get run() {
@@ -50,6 +54,7 @@ export function createRunTracker({ tuning = RUN_TUNING } = {}) {
     start(atTime) {
       if (current) return null;
       current = startRun(atTime);
+      firedMilestones = new Set();
       return { type: 'run:started', run: current };
     },
 
@@ -58,14 +63,25 @@ export function createRunTracker({ tuning = RUN_TUNING } = {}) {
      *
      * `points` is reported as the difference the landing made rather than
      * recomputed here, so the HUD can never disagree with the running total.
+     * When the landing takes the chain to exactly a configured milestone, a
+     * `run:milestone` event follows the extension — a beat to celebrate, not
+     * a score bonus, and each threshold fires at most once per run.
      *
-     * @returns {RunEvent|null} null when nothing is in progress
+     * @returns {RunEvent[]} empty when nothing is in progress
      */
     extend(tree, glide) {
-      if (!current) return null;
+      if (!current) return [];
       const before = current.score;
       current = extendRun(current, { tree, glide }, tuning);
-      return { type: 'run:extended', run: current, tree, points: current.score - before };
+      const events = [
+        { type: 'run:extended', run: current, tree, points: current.score - before },
+      ];
+      const milestoneChains = tuning.milestoneChains ?? [];
+      if (milestoneChains.includes(current.chain) && !firedMilestones.has(current.chain)) {
+        firedMilestones.add(current.chain);
+        events.push({ type: 'run:milestone', run: current, chain: current.chain });
+      }
+      return events;
     },
 
     /**

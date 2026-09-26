@@ -91,13 +91,16 @@ export function createSimulation(options = {}) {
     glider = landOn(glider, tree);
     emit({ type: 'glide:landed', tree, reason, glide: finished });
 
-    // Catching bark extends the chain; touching the ground ends it. The tree
-    // you scamper up after a fall scores nothing — it was not caught, and
-    // paying for it would make aiming at nothing a viable way to keep going.
-    const runEvent = reason === 'ground'
-      ? runs.end(elapsed, 'ground')
-      : runs.extend(tree, finished);
-    if (runEvent) emit(runEvent);
+    // Catching bark extends the chain (and, on a milestone, celebrates it);
+    // touching the ground ends it. The tree you scamper up after a fall
+    // scores nothing — it was not caught, and paying for it would make aiming
+    // at nothing a viable way to keep going.
+    if (reason === 'ground') {
+      const ended = runs.end(elapsed, 'ground');
+      if (ended) emit(ended);
+    } else {
+      for (const runEvent of runs.extend(tree, finished)) emit(runEvent);
+    }
 
     interactions.land(tree, context());
 

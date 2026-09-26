@@ -629,3 +629,25 @@ simulation already computed, so the HUD still does no run arithmetic. Using
 a run. The verdict is judged against the best known *before* the run ended —
 the sync's server round-trip resolves later and can only raise the best, which
 `onBest` then shows.
+
+## D-36 — `extend` returns a list of run events, and milestones carry no reward
+
+**Ambiguity.** LAN-518 asks the run tracker to return `run:milestone`
+"alongside" `run:extended`, but D-31 has `extend` returning one event or
+`null`. The ticket also says each threshold fires once per run without saying
+where that is remembered.
+
+**Decision.** `extend` now returns an array: empty when no run is going,
+otherwise `run:extended` followed by `run:milestone` when the new chain equals
+a value in `RUN_TUNING.milestoneChains`. `createSimulation` emits the array in
+order. `start` and `end` keep D-31's event-or-`null` shape. The tracker
+remembers which thresholds a run has fired and forgets them when the next run
+starts. A milestone event carries the run and the chain, and nothing else.
+
+**Reasoning.** D-31's point was that every run `emit` sits in one function so
+the order is readable there. A list keeps that: `run:milestone` can only come
+out right after the extension that caused it. A separate `checkMilestone` call
+would have put that ordering back on the caller. Chains only grow by one per
+landing, so "exactly a threshold" already fires each once per run. The
+remembered set guards against a future rule that lets a chain repeat a
+length. No `points` field keeps the milestone from becoming currency (D-28).

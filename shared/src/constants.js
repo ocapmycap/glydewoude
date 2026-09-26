@@ -180,4 +180,6 @@ export const RUN_TUNING = Object.freeze({
   freshBonus: 1.5,
   /** Below this many landings it was not a run, and nothing banks it. */
   minChainToBank: 2,
+  /** Chain lengths worth a celebratory beat in the HUD, not a score bonus. */
+  milestoneChains: Object.freeze([3, 5, 10]),
 });
