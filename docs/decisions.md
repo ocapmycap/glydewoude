@@ -651,3 +651,27 @@ would have put that ordering back on the caller. Chains only grow by one per
 landing, so "exactly a threshold" already fires each once per run. The
 remembered set guards against a future rule that lets a chain repeat a
 length. No `points` field keeps the milestone from becoming currency (D-28).
+
+## D-38 — Tree detail rides on the existing instances, not new meshes
+
+**Ambiguity.** LAN-519 offers two ways to break up the canopy (jitter the
+geometry, or add smaller leaf clusters) and says the forest must stay "a
+handful of draw calls" without saying whether new instanced meshes count.
+
+**Decision.** Both, with no new draw calls. The shared canopy icosahedron has
+its corners pushed in or out by up to 18%, seeded from a fixed string, keyed by
+position so the mesh and its outline hull stay closed. Each tree also gets four
+smaller leaf tufts around its rim, drawn as extra instances of the canopy mesh
+in a slightly lighter shade. Bark is one 64×128 canvas texture of near-white
+vertical grooves, used as the trunk material's `map` so the per-instance bark
+colour still sets the hue and `MeshToonMaterial` still bands the lighting.
+Canopy and bark colour, tuft placement and blob spin come from an RNG seeded
+with `hashSeed('render:' + tree.id)`. The world seed's own stream is not used,
+so render-only variety can never shift worldgen. Destination canopies drift at
+most 25% toward green, so they still read as gold from the air. Tufts and
+jittered corners reach a little past `canopyRadius`. That changes the drawing
+only: perch and catch radii are untouched.
+
+**Reasoning.** The instance count grows with the forest, but the draw-call
+count stays at four. Seeding from the id rather than the array index keeps a
+tree's look stable if worldgen later inserts or reorders trees.
