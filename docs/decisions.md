@@ -700,3 +700,42 @@ every existing test as they were. The vertical band uses `canopyDepth`, which
 `WORLD_CONFIG` already matches to how far the drawn foliage hangs, so a
 structure is never floating above the leaves or buried near the ground. Structures are data only.
 `perchRadius`, `catchRadius` and landing do not read them.
+
+## D-42 — The leaf burst is one pooled InstancedMesh that keeps its own clock
+
+**Ambiguity.** LAN-521 asks for pooled leaves, reused geometry and material,
+and only one import and one wiring line in `main.js`. It does not say how the
+effect advances each frame, since `renderer.render` is not handed events and
+`main.js` should not grow a per-frame call for it.
+
+**Decision.** `client/src/render/leaf-burst.js` allocates four burst slots of
+sixteen leaves as one `InstancedMesh` plus its outline hull, once. A landing
+claims the oldest slot and rewrites its leaves. The effect steps itself from
+the leaf mesh's `onBeforeRender`, timed by `performance.now()`. When no leaf
+is live, it parks every instance at zero scale and skips the step. The meshes
+stay visible so their shaders compile at load, not on the first landing. `main.js` builds it from `renderer.scene` and
+forwards `glide:landed` events whose `reason` is `'perch'`. Ground landings get
+no burst. The squirrel missed, and the tree it scampers up was not caught
+(the same reasoning `simulation.js` uses for the chain). Leaf colours come
+from a local `createRng` stream, never from sim state.
+
+**Reasoning.** A fixed pool means ten rapid landings cost the same two draw
+calls and no allocations. A fifth landing within about a second recycles the
+oldest puff, which by then is mostly gone. Self-timing keeps `renderer.js`
+and the loop untouched. The wiring is one import and two lines, a
+`createLeafBurst` call and a `simulation.on` filter, because `render/` must not
+know sim event names.
+
+## D-43 — Leaves "fade" by shrinking, not by opacity
+
+**Ambiguity.** The issue says the leaves "drift down and fade over about a
+second". `MeshToonMaterial` has one opacity per material, not per instance,
+so the leaves of an instanced burst cannot fade out individually.
+
+**Decision.** Each leaf lives 0.8–1.15 s. It pops in over its first 80 ms and
+shrinks to nothing over the last 45% of its life. The material stays opaque.
+
+**Reasoning.** Shrinking reads as fading at this size and keeps the toon look
+and the outline hull intact. A transparent material would need a custom
+shader for per-instance alpha, and it would also cause sorting artefacts
+against the canopy.

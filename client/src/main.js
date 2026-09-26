@@ -22,6 +22,7 @@ import { createHud } from './ui/hud.js';
 import { createTuningPanel } from './ui/tuning-panel.js';
 import { createShop } from './ui/shop.js';
 import { createRunHud } from './ui/run-hud.js';
+import { createLeafBurst } from './render/leaf-burst.js';
 
 import './style.css';
 
@@ -112,3 +113,8 @@ const loop = createLoop({
 });
 
 loop.start();
+
+// A puff of leaves on every caught branch. Ground landings get none: the
+// squirrel missed, and the tree it scampers up was not caught.
+const leafBurst = createLeafBurst(renderer.scene);
+simulation.on((event) => event.type === 'glide:landed' && event.reason === 'perch' && leafBurst.burst(event.tree));
