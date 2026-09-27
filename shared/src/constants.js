@@ -216,14 +216,38 @@ export const PUZZLE_CONFIG = Object.freeze({
   treeCount: 3,
   /** Rings per course. */
   ringCount: 3,
-  /** Ring radius, metres. */
-  ringRadius: 2.5,
   /**
-   * Fraction of a base-stat glide's max range a target may actually use.
-   * Leaves slack for the launch and any turning, so a course picked as
-   * "reachable" still is once a real pilot — not a straight line — flies it.
+   * Ring radius, metres. Raised from 2.5 (LAN-581): once rings sat on the
+   * real, simulated glide path instead of the straight line between the two
+   * perches, a tighter ring left no margin for the small steering corrections
+   * a neutral-pitch pilot actually needs to line one up.
    */
-  reachMargin: 0.8,
+  ringRadius: 4,
+  /**
+   * Seconds per step used to simulate a candidate course's flight path.
+   * Must match client/src/sim/loop.js's FIXED_DT — a course built on a
+   * different timestep would land its rings between the points the shipped
+   * fixed-timestep sim actually samples, instead of on them (LAN-581).
+   */
+  pathStep: 1 / 60,
+  /**
+   * Horizontal distance, metres, the first ring sits from the puzzle tree —
+   * clears the launch hop and the tree's own canopy before a ring appears.
+   */
+  firstRingDistance: 15,
+  /**
+   * Horizontal distance, metres, the last ring sits short of the target —
+   * leaves room to line up the final catch after the last ring.
+   */
+  lastRingClearance: 10,
+  /**
+   * Altitude, metres, a neutral-pitch (steer 0, pitch 0) simulated glide must
+   * still clear above the target's perch at the last ring's horizontal
+   * distance. Without this slack a target could be "reachable" only by diving
+   * past the last ring, which the ring layout — meant to be flown neutral —
+   * could never actually deliver (LAN-581).
+   */
+  lastRingSlack: 2,
   /** Minimum horizontal gap between a puzzle tree and its target, metres, so the rings between them have room to breathe. */
   minTargetDistance: 30,
   /** Seed offset, so puzzle selection does not disturb the main worldgen stream. */

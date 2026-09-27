@@ -8,7 +8,7 @@
 
 const TWO_PI = Math.PI * 2;
 
-function wrapAngle(angle) {
+export function wrapAngle(angle) {
   return ((angle + Math.PI) % TWO_PI + TWO_PI) % TWO_PI - Math.PI;
 }
 
@@ -63,17 +63,28 @@ export function chooseTarget(simulation) {
   return best;
 }
 
-/** Fill `input` with the steering that heads toward `target`. */
+/**
+ * Fill `input.steer` with the proportional steering that heads toward
+ * `point`'s x/z, capped at `maxSteer`. Does not touch `input.pitch` — callers
+ * that care (this file's own `steerToward`, and the puzzle course flight
+ * test) set it themselves, since "neutral pitch" versus "no opinion on pitch"
+ * are different callers' concerns, not this helper's.
+ */
+export function steerTowardPoint(input, simulation, point, maxSteer = 1) {
+  const { motion } = simulation.glider;
+  const bearing = Math.atan2(point.x - motion.x, point.z - motion.z);
+  const error = wrapAngle(bearing - motion.heading);
+  // Heading decreases as the squirrel turns right, hence the negation.
+  input.steer = Math.max(-maxSteer, Math.min(maxSteer, -error * 2));
+}
+
+/** Fill `input` with the steering that heads toward `target`, pitch neutral. */
 export function steerToward(input, simulation, target) {
   if (!target) {
     input.steer = 0;
     input.pitch = 0;
     return;
   }
-  const { motion } = simulation.glider;
-  const bearing = Math.atan2(target.position.x - motion.x, target.position.z - motion.z);
-  const error = wrapAngle(bearing - motion.heading);
-  // Heading decreases as the squirrel turns right, hence the negation.
-  input.steer = Math.max(-1, Math.min(1, -error * 2));
+  steerTowardPoint(input, simulation, target.position);
   input.pitch = 0;
 }

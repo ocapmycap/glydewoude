@@ -5,12 +5,13 @@ import {
   WORLD_CONFIG,
   STRUCTURE_KINDS,
   PUZZLE_CONFIG,
-  BASE_GLIDE_STATS,
   TOWERING_TREE_CONFIG,
 } from '../src/constants.js';
 import { distance2D } from '../src/math.js';
 import { generateForest, nearestTree } from '../src/worldgen.js';
-import { deriveGlideProfile, maxGlideRange } from '../src/glide.js';
+import {
+  deriveGlideProfile, launchMotion, maxGlideRange, stepGlide,
+} from '../src/glide.js';
 
 describe('generateForest', () => {
   it('is deterministic for a seed', () => {
@@ -210,14 +211,12 @@ describe('puzzle trees', () => {
     expect(target).toBeDefined();
     expect(target.id).not.toBe(puzzleTree.id);
 
-    // Stricter reachability rule (LAN-546): range is computed from the drop
-    // to the *target's* perch, so the target must sit lower than the puzzle
-    // tree, not just be in range some other way.
+    // The target must sit lower than the puzzle tree (LAN-546). Reach is no
+    // longer the nominal `maxGlideRange` of the drop (LAN-581): the launch
+    // carries a real neutral glide past that straight-line bound, and the
+    // targets a neutral glide actually catches sit just beyond it. The
+    // simulated-path tests below and puzzle-course-flight.test.js prove reach.
     expect(target.perchY).toBeLessThan(puzzleTree.perchY);
-    const profile = deriveGlideProfile(BASE_GLIDE_STATS);
-    const reach = maxGlideRange(puzzleTree.perchY - target.perchY, profile);
-    const horizontalGap = distance2D(puzzleTree.position, target.position);
-    expect(horizontalGap).toBeLessThanOrEqual(reach);
 
     const dx = target.position.x - puzzleTree.position.x;
     const dz = target.position.z - puzzleTree.position.z;
@@ -352,6 +351,112 @@ describe('puzzle trees', () => {
     expect(PUZZLE_CONFIG.treeCount).toBeLessThanOrEqual(3);
     expect(PUZZLE_CONFIG.ringCount).toBe(3);
   });
+
+  describe('rings on the simulated flight path (LAN-581)', () => {
+    /** The point a glide actually launches from and lands on: perch height above the trunk. */
+    function perchPoint(tree) {
+      return { x: tree.position.x, y: tree.perchY, z: tree.position.z };
+    }
+
+    /**
+     * Fly a base-stat, neutral (steer 0, pitch 0) glide from the puzzle tree's
+     * perch toward the target's perch, at the client's fixed timestep, exactly
+     * as LAN-581 describes worldgen doing it. Returns the sampled polyline.
+     */
+    function flyNeutralPath(puzzleTree, target, profile) {
+      const from = perchPoint(puzzleTree);
+      const to = perchPoint(target);
+      const heading = Math.atan2(to.x - from.x, to.z - from.z);
+      const dt = 1 / 60;
+
+      let motion = launchMotion({ ...from, heading }, profile);
+      const path = [motion];
+      // Generous cap: comfortably more ticks than any reachable course could
+      // take to fly well past the target's altitude, but still bounded so a
+      // regression that stops descending can't hang the test.
+      for (let i = 0; i < 6000 && motion.y > to.y - 20; i += 1) {
+        motion = stepGlide(motion, { steer: 0, pitch: 0 }, profile, dt);
+        path.push(motion);
+      }
+      return path;
+    }
+
+    function closestPointOnSegment(p, a, b) {
+      const abx = b.x - a.x;
+      const aby = b.y - a.y;
+      const abz = b.z - a.z;
+      const lenSq = abx * abx + aby * aby + abz * abz;
+      const apx = p.x - a.x;
+      const apy = p.y - a.y;
+      const apz = p.z - a.z;
+      const t = lenSq === 0 ? 0 : Math.max(0, Math.min(1, (apx * abx + apy * aby + apz * abz) / lenSq));
+      return { x: a.x + abx * t, y: a.y + aby * t, z: a.z + abz * t };
+    }
+
+    /** Nearest point on the polyline `path` to `point`, plus that segment's unit direction. */
+    function nearestOnPath(point, path) {
+      let best = null;
+      for (let i = 0; i < path.length - 1; i += 1) {
+        const a = path[i];
+        const b = path[i + 1];
+        const closest = closestPointOnSegment(point, a, b);
+        const d = Math.hypot(point.x - closest.x, point.y - closest.y, point.z - closest.z);
+        if (!best || d < best.distance) {
+          const len = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+          const direction = len === 0
+            ? { x: 0, y: 0, z: 0 }
+            : { x: (b.x - a.x) / len, y: (b.y - a.y) / len, z: (b.z - a.z) / len };
+          best = { distance: d, direction };
+        }
+      }
+      return best;
+    }
+
+    it('lays every ring on the recomputed neutral glide path, with the first and last rings clear of the two perches, on several seeds', () => {
+      const profile = deriveGlideProfile();
+
+      for (const seed of ['a', 'b', 'c', undefined]) {
+        const world = seed === undefined ? generateForest() : generateForest({ seed });
+        const treesById = new Map(world.trees.map((tree) => [tree.id, tree]));
+
+        for (const puzzleTree of puzzleTreesOf(world)) {
+          const target = treesById.get(puzzleTree.course.targetTreeId);
+          const path = flyNeutralPath(puzzleTree, target, profile);
+          const label = `seed ${seed ?? 'default'}, tree ${puzzleTree.id}`;
+
+          puzzleTree.course.rings.forEach((ring, index) => {
+            const ringLabel = `${label}, ring ${index}`;
+            const nearest = nearestOnPath(ring.center, path);
+            expect(nearest.distance, `${ringLabel}: not on the simulated flight path`)
+              .toBeLessThanOrEqual(0.5);
+
+            const dot = ring.normal.x * nearest.direction.x
+              + ring.normal.y * nearest.direction.y
+              + ring.normal.z * nearest.direction.z;
+            expect(dot, `${ringLabel}: normal does not follow the path direction`)
+              .toBeGreaterThan(0.99);
+
+            expect(ring.radius, ringLabel).toBe(PUZZLE_CONFIG.ringRadius);
+          });
+
+          const firstRing = puzzleTree.course.rings[0];
+          const firstGap = distance2D(puzzleTree.position, firstRing.center);
+          expect(firstGap, `${label}: first ring too close to the puzzle tree`)
+            .toBeGreaterThanOrEqual(15);
+
+          const lastRing = puzzleTree.course.rings[puzzleTree.course.rings.length - 1];
+          const lastGap = distance2D(target.position, lastRing.center);
+          expect(lastGap, `${label}: last ring too close to the target`)
+            .toBeGreaterThanOrEqual(10);
+        }
+      }
+    });
+
+    it('raises ringRadius to about 4', () => {
+      expect(PUZZLE_CONFIG.ringRadius).toBeGreaterThanOrEqual(3.5);
+      expect(PUZZLE_CONFIG.ringRadius).toBeLessThanOrEqual(5);
+    });
+  });
 });
 
 describe('towering trees (LAN-553)', () => {
@@ -379,8 +484,11 @@ describe('towering trees (LAN-553)', () => {
   // generateForest() with the default seed: 187 trees, fingerprinted as
   // `id|type|x|y|z` (positions rounded to 1e-6) and folded with the FNV-1a
   // above. Proves towering trees do not disturb a single existing tree.
+  // Repinned for LAN-581: moving rings onto the simulated glide changed which
+  // trees qualify as puzzle trees, so two `type` fields flipped. No position
+  // moved.
   const PINNED_ORDINARY_TREE_COUNT = 187;
-  const PINNED_ORDINARY_TREES_HASH = 1112669281;
+  const PINNED_ORDINARY_TREES_HASH = 2998851761;
 
   it('leaves the pre-LAN-553 trees, in order, byte-for-byte identical', () => {
     const world = generateForest();

@@ -67,14 +67,14 @@ describe('nearestPuzzleTree', () => {
     expect(nearestPuzzleTree([], { x: 0, y: 0, z: 0 })).toBeNull();
   });
 
-  it('finds Split Cedar as the nearest puzzle tree from the great tree in the default forest', () => {
+  it('finds Rookery Spire as the nearest puzzle tree from the great tree in the default forest', () => {
     const { trees } = generateForest();
     const greatTree = trees.find((tree) => tree.id === 'tree-great');
     expect(greatTree).toBeTruthy();
 
     const result = nearestPuzzleTree(trees, greatTree.position);
     expect(result).toBeTruthy();
-    expect(result.tree.name).toBe('Split Cedar');
+    expect(result.tree.name).toBe('Rookery Spire');
   });
 });
 

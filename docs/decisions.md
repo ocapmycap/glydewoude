@@ -1733,3 +1733,61 @@ when a group of 4 lands close by, and removing it would take a larger pool
 of smaller groups, which reads more like a swarm. The mirrored-instance
 wings meet the one-mesh budget without a custom shader, which is Phase 4 art
 work.
+
+## D-83 — Puzzle rings sit on a simulated neutral glide, not the straight line
+
+**Ambiguity.** LAN-581 moves puzzle rings onto the path a neutral glide
+actually flies, and replaces the straight-line reach and clear-path checks
+with checks along that path. It gives the spacing and ring size as "about"
+figures, and leaves open the timestep, the slack above the target, what
+"reachable" means past the last ring, and what happens to tests that pinned
+the old selection.
+
+**Decision.** `flyNeutralPath` in `shared/src/worldgen.js` runs
+`launchMotion`, then `stepGlide` with steer 0 and pitch 0, at
+`PUZZLE_CONFIG.pathStep` = 1/60 s, the client's `FIXED_DT`. The glide heads
+from the puzzle tree's perch toward the target's trunk. It stops when the
+target's catch volume takes it or it falls below the target's `minCatchY`.
+Rings sit at horizontal distances from 15 m (`firstRingDistance`) out to 10 m
+short of the target (`lastRingClearance`), evenly spaced. Each ring is
+interpolated onto the path and faces the path's direction there.
+`ringRadius` goes from 2.5 m to 4 m. A target qualifies when all of these
+hold:
+
+- the path is at least 2 m (`lastRingSlack`) above its perch at the last ring;
+- the path, still flown neutral with no steering, is caught by the target;
+- no other tree's catch volume touches the path before that. Up to the last
+  ring, the check widens each volume by the ring radius, so the rings clear
+  the foliage as well.
+
+`reachMargin` is removed, since nothing reads it now.
+
+Pairs more than 40 m beyond the nominal `maxGlideRange` are skipped without
+simulating. On every seed tested the launch never gains more than 11 m, so
+this margin cannot reject a pair the simulation would accept. Each path is
+simulated once, cached, and reused by `buildCourse`. The clearance scan
+checks only trees near the path's ground track. `generateForest()` takes
+about 10 ms warm, against 27 ms before this change, and its output is
+byte-identical to the unoptimised version.
+
+Existing tests changed for the new layout:
+- `expectValidCourse` no longer asserts `gap <= maxGlideRange(drop)`. The
+  launch carries a neutral glide about 10 m past that nominal line, so every
+  target a neutral glide can catch sits 5–20% beyond it. Reach is now proven
+  by the simulated-path worldgen test and `puzzle-course-flight.test.js`.
+- The pre-LAN-553 fingerprint is repinned. Only `type` fields changed:
+  different trees became viable, so the salted `randPick` picked different
+  puzzle trees. Every position and every other field is byte-identical on all
+  four tested seeds.
+- `puzzle-pointer.test.js` now expects Rookery Spire as the nearest puzzle
+  tree to the great tree on the default seed.
+
+**Reasoning.** Requiring the neutral path to be caught, not only to clear the
+target's perch, is what lets a pilot who holds pitch neutral finish the trial
+without a dive. Without it, a target could pass the slack check and still be
+overflown. The same deterministic path serves both target validation and
+ring placement, so the server can rebuild the course from the seed
+(product doc §6.1). Puzzle selection keeps its salted stream. Which trees
+become puzzles can still change, because viability depends on the reach
+check. That follows from the check the issue asked to replace, not from a new
+draw on the rng.

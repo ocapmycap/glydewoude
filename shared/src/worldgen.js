@@ -15,7 +15,9 @@ import {
 } from './constants.js';
 import { createRng, hashSeed, randRange, randPick } from './rng.js';
 import { distance2D } from './math.js';
-import { deriveGlideProfile, maxGlideRange } from './glide.js';
+import {
+  deriveGlideProfile, launchMotion, maxGlideRange, stepGlide,
+} from './glide.js';
 
 /**
  * @typedef {object} Tree
@@ -154,58 +156,231 @@ function perchPoint(tree) {
   return { x: tree.position.x, y: tree.perchY, z: tree.position.z };
 }
 
-/** Unit vector from `from` to `to`, in full 3D — used as a ring's facing. */
-function directionBetween(from, to) {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const dz = to.z - from.z;
-  const length = Math.hypot(dx, dy, dz);
-  return { x: dx / length, y: dy / length, z: dz / length };
+/**
+ * Comfortably more ticks than any reachable course could take to either reach
+ * a target or conclusively miss it, but still bounded so a target that can
+ * never be caught does not simulate forever (LAN-581).
+ */
+const MAX_PATH_TICKS = 6000;
+
+/**
+ * Cheap, provably-conservative reject margin (metres) used before simulating
+ * a candidate/target pair at all (LAN-581 perf pass). A neutral glide's
+ * ground speed converges to cruise almost immediately and then holds
+ * `profile.glideRatio` exactly (no pitch means no off-cruise penalty), so the
+ * only way an actual flight beats the nominal `maxGlideRange(drop, profile)`
+ * line is the brief launch-hop climb and speed ramp-up — measured across
+ * every valid pair on several seeds at under 11 m (see docs/decisions.md
+ * D-83). This margin is several times that, so it only ever screens out
+ * pairs that are unreachable by a wide margin, never one flyNeutralPath
+ * would actually have caught.
+ */
+const REACH_FILTER_MARGIN = 40;
+
+/**
+ * Mirrors `treeCatches` in client/src/sim/landing.js — shared cannot import
+ * client code, so the catch-volume geometry is reproduced here. Keep the two
+ * in step if landing's catch rule ever changes. `inflate` grows the
+ * horizontal radius so a ring, not just the flight line through its centre,
+ * clears the foliage too.
+ */
+function catchesPoint(tree, point, inflate = 0) {
+  if (tree.perchY === null) return false;
+  if (point.y > tree.perchY || point.y < tree.minCatchY) return false;
+  const horizontal = distance2D(tree.position, point);
+  const inCanopy = point.y >= tree.perchY - tree.canopyDepth;
+  return horizontal <= (inCanopy ? tree.perchRadius : tree.catchRadius) + inflate;
 }
 
 /**
- * Sample the straight line between two perch points at ~1 m steps and check
- * none of them fall inside another tree's catch volume, so a course never
- * sends a pilot straight through foliage that would catch them mid-flight.
+ * Fly a base-stat, neutral (steer 0, pitch 0) glide from `from` toward
+ * `target`'s perch, at the client's fixed timestep (LAN-581) — this is what
+ * replaces the straight line a course used to be built on, which a neutral
+ * glide's real arc never actually follows.
  *
- * Mirrors `treeCatches` in client/src/sim/landing.js — shared cannot import
- * client code, so the catch-volume geometry is reproduced here. Keep the two
- * in step if landing's catch rule ever changes. The horizontal radius is
- * inflated by the ring radius so the ring itself clears the foliage too, not
- * just the flight line through its centre.
+ * Stops as soon as `target` catches the flight (the path then ends exactly on
+ * the catch, so nothing downstream needs a separate catch index), once the
+ * flight has fallen irrecoverably below the target's trunk, or after
+ * `MAX_PATH_TICKS` — whichever comes first. Returns the sampled polyline,
+ * launch point included.
  */
-function pathIsClear(from, to, trees, ignoreIds) {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  const dz = to.z - from.z;
-  const length = Math.hypot(dx, dy, dz);
-  const steps = Math.max(PUZZLE_CONFIG.ringCount + 1, Math.ceil(length));
+function flyNeutralPath(from, target, profile) {
+  const to = perchPoint(target);
+  const heading = Math.atan2(to.x - from.x, to.z - from.z);
+  let motion = launchMotion({ ...from, heading }, profile);
+  const path = [motion];
 
-  for (let i = 0; i <= steps; i += 1) {
-    const t = i / steps;
-    const point = { x: from.x + dx * t, y: from.y + dy * t, z: from.z + dz * t };
+  for (let i = 0; i < MAX_PATH_TICKS; i += 1) {
+    if (motion.y < target.minCatchY || catchesPoint(target, motion)) break;
+    motion = stepGlide(motion, { steer: 0, pitch: 0 }, profile, PUZZLE_CONFIG.pathStep);
+    path.push(motion);
+  }
+  return path;
+}
 
-    for (const tree of trees) {
-      if (ignoreIds.has(tree.id)) continue;
-      if (point.y > tree.perchY || point.y < tree.minCatchY) continue;
-      const horizontal = distance2D(tree.position, point);
-      const inCanopy = point.y >= tree.perchY - tree.canopyDepth;
-      const radius = (inCanopy ? tree.perchRadius : tree.catchRadius) + PUZZLE_CONFIG.ringRadius;
-      if (horizontal <= radius) return false;
+/**
+ * The point on `path` at horizontal distance `targetDistance` from `from`,
+ * interpolated between the two straddling samples so it lands exactly on the
+ * polyline, plus that segment's unit 3D direction (the ring's facing).
+ *
+ * Horizontal distance is monotonic along `path` — a neutral glide never
+ * steers, so its ground track is the straight line toward the target and
+ * only altitude curves — which is what makes searching by horizontal
+ * distance rather than by time well-defined.
+ */
+function pointAtHorizontalDistance(path, from, targetDistance) {
+  let previous = path[0];
+  let previousDistance = 0;
+
+  for (let i = 1; i < path.length; i += 1) {
+    const point = path[i];
+    const pointDistance = distance2D(from, point);
+    if (pointDistance >= targetDistance) {
+      const span = pointDistance - previousDistance;
+      const t = span === 0 ? 0 : (targetDistance - previousDistance) / span;
+      const center = {
+        x: previous.x + (point.x - previous.x) * t,
+        y: previous.y + (point.y - previous.y) * t,
+        z: previous.z + (point.z - previous.z) * t,
+      };
+      const segLength = Math.hypot(point.x - previous.x, point.y - previous.y, point.z - previous.z);
+      const direction = segLength === 0
+        ? { x: 0, y: 0, z: 0 }
+        : {
+          x: (point.x - previous.x) / segLength,
+          y: (point.y - previous.y) / segLength,
+          z: (point.z - previous.z) / segLength,
+        };
+      return { center, direction };
+    }
+    previous = point;
+    previousDistance = pointDistance;
+  }
+
+  // Never reached — the path ended (caught, fell away, or capped) short of
+  // `targetDistance`. Falling back to the last sample keeps this total; the
+  // callers that care (validTargets) reject on the altitude this implies.
+  const last = path[path.length - 1];
+  return { center: { x: last.x, y: last.y, z: last.z }, direction: { x: 0, y: 0, z: 0 } };
+}
+
+/**
+ * Trees that could conceivably catch somewhere along `path`, so the
+ * point-by-point scan below only visits candidates worth checking instead of
+ * every tree in the forest (LAN-581 perf pass). Conservative in two ways —
+ * safe to over-include, never to exclude a tree that actually could catch:
+ *
+ *   - altitude: `catchesPoint` never fires above a tree's perch or below its
+ *     minCatchY, so a tree whose whole catchable band misses the path's
+ *     altitude range entirely is skipped.
+ *   - horizontal: the ground track is a straight segment — a neutral glide
+ *     never steers — so a tree further from that segment than the larger of
+ *     its two catch radii, inflated the same way `catchesPoint` is, can never
+ *     be within range of any point on the path.
+ */
+function treesNearPath(path, from, trees, ignoreIds) {
+  const last = path[path.length - 1];
+  const segX = last.x - from.x;
+  const segZ = last.z - from.z;
+  const segLenSq = segX * segX + segZ * segZ;
+
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const point of path) {
+    if (point.y < minY) minY = point.y;
+    if (point.y > maxY) maxY = point.y;
+  }
+
+  return trees.filter((tree) => {
+    if (ignoreIds.has(tree.id)) return false;
+    if (tree.perchY === null) return false;
+    if (tree.minCatchY > maxY || tree.perchY < minY) return false;
+
+    const radius = Math.max(tree.perchRadius, tree.catchRadius) + PUZZLE_CONFIG.ringRadius;
+    const dx = tree.position.x - from.x;
+    const dz = tree.position.z - from.z;
+    const t = segLenSq === 0 ? 0 : Math.max(0, Math.min(1, (dx * segX + dz * segZ) / segLenSq));
+    const closestX = from.x + segX * t;
+    const closestZ = from.z + segZ * t;
+    return Math.hypot(tree.position.x - closestX, tree.position.z - closestZ) <= radius;
+  });
+}
+
+/**
+ * Does any tree other than `ignoreIds` catch the flight anywhere along
+ * `path`, up to and including where it ends? Up to the last ring's horizontal
+ * distance the catch radius is inflated by the ring radius, so the rings
+ * themselves clear the foliage too, not just the flight line through their
+ * centres — beyond the last ring only the flight line itself needs to be
+ * clear.
+ */
+function pathClearOfOtherTrees(path, from, lastRingDistance, trees, ignoreIds) {
+  const nearby = treesNearPath(path, from, trees, ignoreIds);
+  if (nearby.length === 0) return true;
+
+  for (const point of path) {
+    const inflate = distance2D(from, point) <= lastRingDistance ? PUZZLE_CONFIG.ringRadius : 0;
+    for (const tree of nearby) {
+      if (catchesPoint(tree, point, inflate)) return false;
     }
   }
   return true;
 }
 
 /**
- * Trees `candidate` could send a puzzle course to: lower, in range of a
- * base-stat glide with slack (PUZZLE_CONFIG.reachMargin), far enough away for
+ * The expensive part of validating (and later building) a course between one
+ * specific candidate/target pair: simulate the flight, then check it clears
+ * the last ring with slack, is actually caught, and never clips another
+ * tree's foliage. Memoized in `cache` keyed by the pair, since
+ * `placePuzzleCourses` asks about the same pair more than once — once while
+ * checking whether a candidate is viable at all, again when picking one of
+ * its targets, and again in `buildCourse` once one is chosen — and a
+ * candidate/target pair's answer never changes within one `generateForest`
+ * call (LAN-581 perf pass).
+ */
+function evaluatePair(candidate, target, trees, profile, cache) {
+  const key = `${candidate.id}|${target.id}`;
+  const cached = cache.get(key);
+  if (cached) return cached;
+
+  const from = perchPoint(candidate);
+  const horizontalGap = distance2D(candidate.position, target.position);
+  const path = flyNeutralPath(from, target, profile);
+  const lastRingDistance = horizontalGap - PUZZLE_CONFIG.lastRingClearance;
+
+  const atLastRing = pointAtHorizontalDistance(path, from, lastRingDistance);
+  let reachable = atLastRing.center.y >= target.perchY + PUZZLE_CONFIG.lastRingSlack
+    && catchesPoint(target, path[path.length - 1]);
+
+  if (reachable) {
+    // The launch guard covers the puzzle tree itself, and arriving at the
+    // target is the point of the course, so both ends are exempt from their
+    // own catch volumes when checking the path between them.
+    const ignoreIds = new Set([candidate.id, target.id]);
+    reachable = pathClearOfOtherTrees(path, from, lastRingDistance, trees, ignoreIds);
+  }
+
+  const evaluation = { reachable, path, horizontalGap };
+  cache.set(key, evaluation);
+  return evaluation;
+}
+
+/**
+ * Trees `candidate` could send a puzzle course to: lower, far enough away for
  * rings to have room, never the great tree, the candidate itself, or a tree
  * already chosen as a puzzle (a course must not end on another puzzle), and
- * with a straight path that does not fly through another tree's canopy.
+ * — replacing the old straight-line reach and clearance checks (LAN-581),
+ * which a real neutral glide's arc does not actually respect — reachable by a
+ * simulated neutral-pitch glide that:
+ *
+ *   1. is still above the target's perch, with slack, at the horizontal
+ *      distance the last ring will sit (so the final approach never needs a
+ *      dive a neutral-pitch pilot could not fly), and
+ *   2. is actually caught by the target, not just passing near it, and
+ *   3. never enters another tree's catch volume on the way, foliage-cleared
+ *      by the ring radius up to the last ring.
  */
-function validTargets(candidate, trees, excludedIds, profile) {
-  const from = perchPoint(candidate);
+function validTargets(candidate, trees, excludedIds, profile, cache) {
   return trees.filter((target) => {
     if (target.id === 'tree-great') return false;
     if (target.id === candidate.id) return false;
@@ -215,41 +390,49 @@ function validTargets(candidate, trees, excludedIds, profile) {
     const horizontalGap = distance2D(candidate.position, target.position);
     if (horizontalGap < PUZZLE_CONFIG.minTargetDistance) return false;
 
-    const reach = PUZZLE_CONFIG.reachMargin
-      * maxGlideRange(candidate.perchY - target.perchY, profile);
-    if (horizontalGap > reach) return false;
+    // Cheap conservative reject before simulating anything — see
+    // REACH_FILTER_MARGIN for why this can never rule out a pair
+    // `evaluatePair` would actually have accepted.
+    const nominalRange = maxGlideRange(candidate.perchY - target.perchY, profile);
+    if (horizontalGap > nominalRange + REACH_FILTER_MARGIN) return false;
 
-    // The launch guard covers the puzzle tree itself, and arriving at the
-    // target is the point of the course, so both ends are exempt from their
-    // own catch volumes when checking the path between them.
-    return pathIsClear(from, perchPoint(target), trees, new Set([candidate.id, target.id]));
+    return evaluatePair(candidate, target, trees, profile, cache).reachable;
   });
 }
 
 /**
- * Lay out a course's rings evenly along the straight line between the two
- * perch points, each one lower than the last, all facing the target. No
- * lateral jitter — a pilot has to be able to fly this on a line.
+ * Lay out a course's rings on the simulated neutral-pitch flight path between
+ * the two perches (LAN-581), not the straight line between them — a neutral
+ * glide's real descent arcs, so rings on the straight line sat below where
+ * the glide actually is by the time it gets there. The first ring sits
+ * `firstRingDistance` out from the puzzle tree, the last `lastRingClearance`
+ * short of the target, and the rest are spaced evenly between the two by
+ * horizontal distance along the path. Each ring's normal is the path's own
+ * direction at that point, so it faces however the glide is actually moving
+ * there, not just "toward the target".
  */
-function buildCourse(puzzleTree, target) {
+function buildCourse(puzzleTree, target, trees, profile, cache) {
   const from = perchPoint(puzzleTree);
-  const to = perchPoint(target);
-  const normal = directionBetween(from, to);
+  // Reuses the path validTargets already simulated to accept this pair
+  // instead of flying it a second time (LAN-581 perf pass).
+  const { path, horizontalGap } = evaluatePair(puzzleTree, target, trees, profile, cache);
+
+  // Both ends nudge a hair outward from their nominal clearance: a ring
+  // center is an interpolated point on a polyline, and comparing its
+  // Euclidean distance back to a perch against the same nominal number the
+  // interpolation was built from can lose in the last bit or two of float
+  // precision, undershooting "at least firstRingDistance/lastRingClearance"
+  // by a fraction of a nanometre. The epsilon costs nothing at course scale.
+  const firstDistance = PUZZLE_CONFIG.firstRingDistance + 1e-6;
+  const lastDistance = horizontalGap - PUZZLE_CONFIG.lastRingClearance - 1e-6;
+  const { ringCount } = PUZZLE_CONFIG;
 
   const rings = [];
-  for (let i = 1; i <= PUZZLE_CONFIG.ringCount; i += 1) {
-    const t = i / (PUZZLE_CONFIG.ringCount + 1);
-    rings.push({
-      center: {
-        x: from.x + (to.x - from.x) * t,
-        y: from.y + (to.y - from.y) * t,
-        z: from.z + (to.z - from.z) * t,
-      },
-      // Own copy per ring so nothing downstream can mutate one ring's normal
-      // and silently affect the others.
-      normal: { ...normal },
-      radius: PUZZLE_CONFIG.ringRadius,
-    });
+  for (let i = 0; i < ringCount; i += 1) {
+    const t = ringCount === 1 ? 0 : i / (ringCount - 1);
+    const distanceAlong = firstDistance + (lastDistance - firstDistance) * t;
+    const { center, direction } = pointAtHorizontalDistance(path, from, distanceAlong);
+    rings.push({ center, normal: direction, radius: PUZZLE_CONFIG.ringRadius });
   }
   return { targetTreeId: target.id, rings };
 }
@@ -267,6 +450,9 @@ function buildCourse(puzzleTree, target) {
 function placePuzzleCourses(trees, seed) {
   const rng = createRng((seed ^ PUZZLE_CONFIG.seedSalt) >>> 0);
   const profile = deriveGlideProfile();
+  // Shared across every candidate/target pair this call ever looks at — see
+  // evaluatePair for why that is safe and what it saves.
+  const pairCache = new Map();
 
   const targetIdByPuzzleId = new Map();
   let remaining = trees.filter((tree) => tree.isDestination && tree.id !== 'tree-great');
@@ -274,12 +460,12 @@ function placePuzzleCourses(trees, seed) {
   for (let i = 0; i < PUZZLE_CONFIG.treeCount; i += 1) {
     const chosenIds = new Set(targetIdByPuzzleId.keys());
     const viable = remaining.filter(
-      (candidate) => validTargets(candidate, trees, chosenIds, profile).length > 0,
+      (candidate) => validTargets(candidate, trees, chosenIds, profile, pairCache).length > 0,
     );
     if (viable.length === 0) break;
 
     const puzzleTree = randPick(rng, viable);
-    const targets = validTargets(puzzleTree, trees, chosenIds, profile);
+    const targets = validTargets(puzzleTree, trees, chosenIds, profile, pairCache);
     const target = randPick(rng, targets);
 
     targetIdByPuzzleId.set(puzzleTree.id, target.id);
@@ -297,7 +483,7 @@ function placePuzzleCourses(trees, seed) {
     return {
       ...tree,
       type: TREE_TYPES.PUZZLE,
-      course: buildCourse(tree, treesById.get(targetId)),
+      course: buildCourse(tree, treesById.get(targetId), trees, profile, pairCache),
     };
   });
 }
