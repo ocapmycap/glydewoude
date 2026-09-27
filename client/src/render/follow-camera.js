@@ -21,10 +21,33 @@ const GLIDING = { distance: 9, height: 2.9, lookAhead: 14, stiffness: 3.4 };
  */
 const CLINGING = { side: 8, out: 1, height: 3, lookAhead: 4, lookDrop: 2.5, stiffness: 4 };
 
+/**
+ * Swinging round into the cling view uses a softer spring than holding it,
+ * so the move reads as a calm settle rather than a jolt (D-71). 2.3/s covers
+ * 95% of the swing in about 1.3 s (ln 20 / 2.3); after `seconds` the camera
+ * tracks at `CLINGING.stiffness` again so a settled view doesn't drift.
+ */
+const CLING_ENTRY = Object.freeze({ stiffness: 2.3, seconds: 1.3 });
+
+/**
+ * Where the camera aims is eased only across a change into or out of the
+ * cling view, where the aim point flips from ahead of the squirrel to behind
+ * and below it. It is held as an offset from the squirrel so the aim never
+ * lags a moving squirrel, and snaps back to exact once within `settled`
+ * metres, leaving perched and gliding framing exactly as before (D-71).
+ */
+const LOOK_EASE = Object.freeze({ settled: 0.05 });
+
 export function createFollowCamera(camera) {
   const desired = new Vector3();
   const lookTarget = new Vector3();
+  const desiredLook = new Vector3();
+  // The aim point relative to the squirrel, eased while `lookEasing`.
+  const lookOffset = new Vector3();
   let initialised = false;
+  let lastPhase = null;
+  let clingEntryAge = Infinity;
+  let lookEasing = false;
 
   return {
     /**
@@ -57,11 +80,19 @@ export function createFollowCamera(camera) {
         );
       }
 
+      if (initialised && phase !== lastPhase) {
+        if (clinging) clingEntryAge = 0;
+        if (clinging || lastPhase === 'clinging') lookEasing = true;
+      }
+      const entering = clinging && clingEntryAge < CLING_ENTRY.seconds;
+      const stiffness = entering ? CLING_ENTRY.stiffness : rig.stiffness;
+      const alpha = 1 - Math.exp(-stiffness * dt);
+      clingEntryAge += dt;
+      lastPhase = phase;
+
       if (!initialised) {
         camera.position.copy(desired);
-        initialised = true;
       } else {
-        const alpha = 1 - Math.exp(-rig.stiffness * dt);
         camera.position.lerp(desired, alpha);
       }
 
@@ -69,24 +100,40 @@ export function createFollowCamera(camera) {
       camera.position.y = Math.max(camera.position.y, 1.5);
 
       if (clinging) {
-        lookTarget.set(
-          motion.x - forwardX * rig.lookAhead,
-          motion.y - rig.lookDrop,
-          motion.z - forwardZ * rig.lookAhead,
+        desiredLook.set(
+          -forwardX * rig.lookAhead,
+          -rig.lookDrop,
+          -forwardZ * rig.lookAhead,
         );
       } else {
-        lookTarget.set(
-          motion.x + forwardX * rig.lookAhead,
-          motion.y + MathUtils.lerp(0.5, -1.5, gliding ? 1 : 0),
-          motion.z + forwardZ * rig.lookAhead,
+        desiredLook.set(
+          forwardX * rig.lookAhead,
+          MathUtils.lerp(0.5, -1.5, gliding ? 1 : 0),
+          forwardZ * rig.lookAhead,
         );
       }
+
+      if (!initialised || !lookEasing) {
+        lookOffset.copy(desiredLook);
+        lookEasing = false;
+      } else {
+        lookOffset.lerp(desiredLook, alpha);
+        if (lookOffset.distanceTo(desiredLook) < LOOK_EASE.settled) {
+          lookOffset.copy(desiredLook);
+          lookEasing = false;
+        }
+      }
+      initialised = true;
+
+      lookTarget.set(motion.x, motion.y, motion.z).add(lookOffset);
       camera.lookAt(lookTarget);
     },
 
     /** Snap on respawn instead of sweeping across the whole forest. */
     reset() {
       initialised = false;
+      clingEntryAge = Infinity;
+      lookEasing = false;
     },
   };
 }

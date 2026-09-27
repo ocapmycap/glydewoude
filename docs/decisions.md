@@ -1260,3 +1260,29 @@ the canopy on any tree height. Thin, flat and hugging the bark, they can't be
 mistaken for the round, free-floating flight rings from `rings.js`. Scenery,
 landmark and towering trees take the same colour paths and the same per-tree
 random draws as before, so they look unchanged.
+
+## D-71 — Easing into the cling view over about 1.3 s
+
+**Ambiguity.** LAN-570 asked for the swing into the side-on cling view
+(D-68) to settle in "about 1 second", roughly 1.2–1.5 s to cover 95% of the
+distance, and for the aim point to sweep instead of snapping. It left open
+how the slower entry hands back to firm tracking, and whether aim easing
+should apply to every phase change.
+
+**Decision.** `follow-camera.js` gains `CLING_ENTRY` (`stiffness` 2.3/s,
+`seconds` 1.3). For 1.3 s after the phase becomes `clinging`, position eases
+at 2.3/s, which covers 95% of the swing in ln 20 / 2.3 ≈ 1.3 s; after that it
+tracks at `CLINGING.stiffness` (4) as before. The aim point is now held as an
+offset from the squirrel. Across a change into or out of `clinging` that
+offset eases with the same factor as position (so the launch back to the
+behind view keeps its old 3.4/s pace), and snaps to exact once within
+`LOOK_EASE.settled` (0.05 m). Every other phase change, such as perch to
+glide, still aims instantly. `PERCHED` and `GLIDING` are unchanged.
+
+**Reasoning.** 1.3 s sits in the middle of the requested band. A separate
+entry stiffness leaves the settled cling view as firm as before, so it does
+not drift. Easing the aim as an offset, and only around the cling view,
+removes the single-frame flip that read as a jolt without adding lag to the
+perched and gliding framing that has already been tuned. A time limit rather
+than a distance check ends the entry, so it cannot stretch out if the
+squirrel is moving.
