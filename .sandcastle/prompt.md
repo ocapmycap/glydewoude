@@ -8,7 +8,7 @@ sources below, write the decision and your reason into the Linear comment for th
 **Goal:** work through the Glidewood Linear issues labelled `ready-for-agent`, one issue
 per iteration. A person triaged each one so an agent can finish it without asking.
 
-Branch: `agent/glidewood`, cut from `devel`. Commits on it so far:
+Branch: `agent/glidewood-20260927-0250`, cut from `devel`. Commits on it so far:
 
 !`git log --oneline devel..HEAD`
 

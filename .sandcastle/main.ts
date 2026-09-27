@@ -14,7 +14,9 @@ import { docker } from "@ai-hero/sandcastle/sandboxes/docker";
 process.loadEnvFile(".sandcastle/.env");
 
 const BASE_BRANCH = "devel";
-const BRANCH = "agent/glidewood";
+// Runs stack onto the existing night-run branch rather than a fresh one, so new
+// tickets build on its unmerged work. BASE_BRANCH only matters if it is deleted.
+const BRANCH = "agent/glidewood-20260927-0250";
 
 // One Linear issue per iteration. A run stops early once the list is empty. An
 // iteration that dies before closing its issue leaves it open for the next one.
