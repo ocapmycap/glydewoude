@@ -20,6 +20,7 @@ import { createRenderer } from './render/renderer.js';
 import { createInputBindings } from './ui/input.js';
 import { createHud } from './ui/hud.js';
 import { createTuningPanel } from './ui/tuning-panel.js';
+import { createHelpPanel } from './ui/help-panel.js';
 import { createShop } from './ui/shop.js';
 import { createRunHud } from './ui/run-hud.js';
 import { createLeafBurst } from './render/leaf-burst.js';
@@ -90,6 +91,7 @@ const runSync = createRunSync({ session, simulation });
 
 const hud = createHud(overlay, simulation);
 const tuning = createTuningPanel(overlay, simulation);
+const help = createHelpPanel(overlay);
 const shop = createShop(overlay, { session, simulation });
 createRunHud(overlay, { simulation, runSync });
 
@@ -115,6 +117,8 @@ const bindings = createInputBindings(input, canvas, {
   onToggleTuning: () => tuning.toggle(),
   onToggleShop: () => shop.toggle(),
   onToggleLabels: () => treeLabels.toggle(),
+  onToggleHelp: () => help.toggle(),
+  onCloseHelp: () => help.close(),
 });
 
 // The opening hint stays up until the player takes their first launch.

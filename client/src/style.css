@@ -265,6 +265,80 @@ kbd {
   cursor: pointer;
 }
 
+/* --- help panel ----------------------------------------------------------- */
+
+/* Bottom-right: the one corner left free once the HUD (top-left), tuning
+   dials (top-right), run HUD (top-centre) and the opening hint (bottom-left)
+   have theirs. The hint sits underneath the panel's own position and is
+   simply covered by its opaque background once open. */
+.help-hint {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  opacity: 0.35;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.help {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  width: 19rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--paper-edge);
+  border-radius: 0.75rem;
+  background: var(--paper);
+  font-size: 0.8rem;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(0.75rem);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.help--visible {
+  pointer-events: auto;
+  opacity: 1;
+  transform: none;
+}
+
+.help h2 {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+}
+
+.help-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.help-row:last-child {
+  margin-bottom: 0;
+}
+
+.help-keys {
+  flex-shrink: 0;
+}
+
+.help-gamepad {
+  margin-left: 0.35rem;
+  opacity: 0.55;
+  font-size: 0.72rem;
+}
+
+.help-action {
+  text-align: right;
+  opacity: 0.75;
+}
+
 /* --- upgrade shop ------------------------------------------------------- */
 
 /* Centred, because buying is a deliberate stop rather than an overlay you fly
@@ -397,7 +471,8 @@ kbd {
   .hint,
   .toast,
   .tuning,
-  .shop {
+  .shop,
+  .help {
     transition: none;
   }
 }

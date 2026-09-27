@@ -1629,3 +1629,52 @@ climbRate chosen at the catch, rather than a per-step recomputation, is what
 makes "no faster than climbSpeed, ever" and "at least minClimbDuration" both
 simple, provable properties of the whole climb rather than emergent behaviour
 that has to be checked tick by tick.
+
+## D-78 — Controls are one frozen table; the help panel renders it, README mirrors it
+
+**Ambiguity.** LAN-575 asks for a permanent on-screen hint plus a help panel
+that `H` toggles, with the control list held once so it cannot drift from
+`input.js`'s actual bindings. It does not say where the hint or panel should
+sit among the HUD, tuning dials and run HUD that already claim three of the
+four screen corners, whether `Escape` should do one thing or two, or how a
+table of keys, gamepad buttons and mouse actions — not all of which have an
+`event.code` — should be shaped so a single automated test can check it
+against what `input.js` handles.
+
+**Decision.** `client/src/ui/controls.js` exports one frozen array,
+`CONTROLS`, of frozen rows (`keys`, `codes`, `gamepad`, `action`). `codes` is
+the subset of `keys` that are real `event.code` values — empty for the mouse
+click row and for "turn round while perched", which reuses codes another row
+already lists (`KeyS` / `ArrowDown`) rather than claiming them twice. On the
+`input.js` side, `ACTION_KEYS` is a single frozen `code -> action name` map
+that the `keydown` handler switches on, and `HANDLED_KEY_CODES` is exported
+straight from it (plus the existing steer/pitch maps) rather than kept as a
+hand-written list — so the two files cannot silently disagree, and
+`controls.test.js` checks both directions: every handled code has a covering
+row, and every row names only codes that are actually handled.
+
+The permanent hint ("H — controls") and the panel itself both sit
+bottom-right, the one corner not already spoken for (HUD top-left, tuning
+top-right, run HUD top-centre, opening hint bottom-left). The panel is an
+opaque paper card at the same position, styled like the tuning panel
+(`.tuning`) down to the transition and the `prefers-reduced-motion`
+exemption, so opening it simply covers the low-contrast hint underneath
+rather than needing to coordinate hiding it. `Escape` now does two things
+that happen to share a key: it closes the help panel *and*, if the pointer is
+locked, still releases it, both unconditionally — a player who opened help
+mid-glide should not have to press `Escape` twice to get both back. README's
+control table is not covered by the test (it is prose, not code) and must be
+kept matching `CONTROLS` by hand; it was already missing the `B` row before
+this change, and now gains `B`, `H` and `Esc` rows.
+
+**Reasoning.** Deriving `HANDLED_KEY_CODES` from the same map that drives the
+`keydown` switch, rather than writing it out separately, is what makes
+"a row exists for everything handled" a structural guarantee instead of a
+convention someone can forget to update. Giving mouse and turn-round rows an
+empty `codes` array rather than omitting them lets the panel still describe
+every input in one table without those rows ever being mistaken for stale
+coverage. Bottom-right for both the hint and the panel was the only corner
+free; centring the panel instead, like the shop, would have put a mostly
+static reference card over the same ground a player glides through constantly,
+which the shop can get away with only because opening it is already a
+deliberate stop.
