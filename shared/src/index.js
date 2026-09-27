@@ -2,6 +2,7 @@ export * from './constants.js';
 export * from './glide.js';
 export * from './materials.js';
 export * from './math.js';
+export * from './rings.js';
 export * from './rng.js';
 export * from './run.js';
 export * from './worldgen.js';

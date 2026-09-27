@@ -861,3 +861,21 @@ to update the existing assertion deliberately.
 **Reasoning.** An existing test's expectations are not changed to make a new
 change pass. Losing a name popup on three trees for one ticket costs little,
 and LAN-548 already owns this wiring.
+
+## D-51 — A ring crossing is half-open: from strictly behind the plane to on or past it
+
+**Ambiguity.** LAN-547 says a step "crosses the ring's plane in the direction
+of `normal`", but not what happens when an endpoint sits exactly on the plane.
+Counting both "ends on the plane" and "starts on the plane" would credit one
+pass twice across two consecutive fixed steps; counting neither would miss it.
+
+**Decision.** `crossesRing` counts a step only when the start is strictly
+behind the plane and the end is on or in front of it. The crossing point is
+inside the ring when its distance from `center` is at most `radius`
+(boundary inclusive).
+
+**Reasoning.** A half-open interval gives each pass exactly one step. It also
+rejects in-plane and zero-length segments before the one division, so no
+separate guard is needed. The ring's `normal` is assumed unit length, as
+worldgen builds it (D-49); a non-unit normal would scale both distances
+equally and still give the right answer.
