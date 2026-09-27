@@ -1470,3 +1470,39 @@ the struct. Edge-detecting in `simulation.js` rather than in `stepPerch`
 keeps `stepPerch` a pure function of its own arguments (`{ steer, aboutFace }`)
 with no memory of previous input, which is what lets it be tested directly
 without going through the simulation at all.
+
+## D-75 — Wind as ribbons of varied size, with gusts from reserved slots
+
+**Ambiguity.** LAN-573 asks for wind that a low-vision player notices. It
+gives approximate ranges but leaves open how sizes are distributed, how a
+ribbon faces the camera, how gusts fit the fixed pool from D-62, and how to
+keep big marks away from the lens.
+
+**Decision.** Streaks are no longer `LineSegments`. Each one is a ribbon of
+10 centre points (9 quads) in one indexed `Mesh` with a double-sided
+`MeshBasicMaterial`, so there is still one draw call. Each point is pushed out
+sideways along the cross product of the ribbon's direction and the line of
+sight, so the ribbon always faces the camera. It tapers to 15% of its head
+width at the tail and fades to transparent there. This replaces D-62's
+one-pixel lines, which WebGL draws one pixel wide whatever `linewidth` says.
+Each mark draws a size `s = random^2.2`, so most marks are small. Streak
+length is 4–20 m, head width 0.15–0.5 m, peak opacity 0.45–0.75 and curl
+0.45–1.6 m, all interpolated by `s`. Leaves are 0.8–2.5 in scale, drawn the
+same way. A gust comes 6–12 s after the previous one, with the first one 6–12 s
+after load. It wakes 6–10 of 10 streak slots and 4–6 of 6 leaf slots reserved at the end of each
+pool. The pools grow from 24 to 34 streaks and from 12 to 18 leaves. Gust
+marks take sizes from the top fifth of every range. They start 6–16 m up-wind
+of the camera and 6–20 m to one side, at most 6 m above or below it. Each one
+waits up to 0.4 s, then lives 0.9–1.1 s at 16–22 m/s (leaves: 1–1.1 s at
+10–14 m/s), so the whole gust is over in about 1.5 s. Spent gust slots stay
+idle, transparent or scaled to zero, until the next gust. Every mark fades
+out (leaves shrink) between 6 m and 3 m from the camera, so nothing draws
+closer than 3 m. Direction and the visual-only rule from D-61 are unchanged.
+
+**Reasoning.** A size curve biased toward small keeps the screen calm, so the
+occasional 20 m ribbon still stands out. Reserved gust slots keep D-62's
+promise of pools fixed at startup with no allocation per frame, and the
+ambient density does not dip during a gust. Gust marks start off to the side
+because the follow camera sits about 9 m behind the squirrel (`follow-camera.js`).
+The sweep then passes beside the squirrel rather than through it, and the
+3 m fade covers any ambient mark that drifts into the lens.
