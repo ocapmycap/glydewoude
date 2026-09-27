@@ -1387,3 +1387,47 @@ plastered against bark, camera to the side" for the towering-trunk case;
 climbing is the same shape of problem on an ordinary trunk, and reusing the
 rig means LAN-571 adds no new camera code, just one more phase that counts
 as the view already tuned in D-68 and D-71.
+
+## D-74 — Trees between the camera and the squirrel: a dithered screen-door cutout
+
+**Ambiguity.** LAN-572 asked for trees standing between the camera and the
+squirrel to go see-through, without saying how — a per-material opacity
+fade, a shader-level cutout, or something else — or what the capsule size,
+clear zone round the squirrel, and ease timing should be.
+
+**Decision.** A dithered screen-door cutout patched onto the existing toon
+and outline materials via `onBeforeCompile`, in one new module,
+`render/see-through.js`, rather than three copies wired into trees.js,
+towering-trees.js and great-tree.js separately. Every patched fragment shader
+tests its world position against a capsule running from the camera to the
+squirrel and discards a share of fragments inside it, chosen by a 4x4 Bayer
+threshold at `gl_FragCoord.xy` so the cut share can ramp smoothly with the
+eased strength rather than popping a fixed checkerboard in and out. The
+numbers live in a frozen `SEE_THROUGH`: a 1.5 m capsule radius, a 1 m clear
+radius round the squirrel so bark it is touching or perched on never cuts
+out, a 0.15 s ease, and a 50% share of fragments discarded at full strength.
+The ease is global, not per-tree: `createSeeThrough(forest)` raycasts once a
+frame from the camera toward the squirrel against the forest group (`far`
+trimmed by the clear radius, so the squirrel's own trunk is never the
+blocker) and eases one shared strength uniform toward 1 when something is
+hit and toward 0 otherwise. Trunk, canopy, puzzle-tree bands and every
+outline hull are patched — ordinary trees, towering trees and the great
+tree alike — so a cut trunk and its outline hole line up. Ground and
+squirrel are never cut. Structures (dreys and platforms, `structures.js`)
+are also left alone, because LAN-572 scoped the cutout to trees: they are
+neither patched nor raycast against, so a platform between the camera and
+the squirrel still blocks the view. That is a known gap, not an oversight.
+
+**Reasoning.** The forest is instanced (D-38) precisely so a couple of
+hundred trees cost a handful of draw calls; per-tree transparency would mean
+per-tree materials and lose that. D-43 already ruled out per-material
+opacity as a general tool because Three.js has one opacity per material and
+sorting transparent instances is its own problem — the same reasoning
+applies here, doubled, since this needs a *moving* cutout rather than a
+fixed one. A discard-based cutout sidesteps both: it stays opaque for
+depth and sorting purposes and only decides per-fragment, in screen space,
+whether to draw. Easing per-fragment is impossible with materials shared
+across many instances — there is no per-tree "time since this tree started
+blocking" to store — so the ease has to live on one shared clock instead,
+which also means a tree completely out of the way renders exactly as it did
+before this feature, at zero cost beyond the one raycast per frame.

@@ -12,6 +12,7 @@ import { ConeGeometry, CylinderGeometry, Group, Mesh } from 'three';
 import { createRng, hashSeed, randRange } from '@glidewood/shared';
 
 import { PALETTE, mixColor, outlineMaterial, toonMaterial } from './materials.js';
+import { applySeeThrough } from './see-through.js';
 
 /** How much bigger the inverted hull is than the mesh it outlines. */
 const OUTLINE_SCALE = 1.035;
@@ -113,8 +114,8 @@ function createTierGeometry(radius) {
  * solid draws over its front faces (matches trees.js).
  */
 function addWithOutline(group, geometry, material, { position, rotationY = 0, hullScaleY = OUTLINE_SCALE } = {}) {
-  const outline = new Mesh(geometry, outlineMaterial());
-  const solid = new Mesh(geometry, material);
+  const outline = new Mesh(geometry, applySeeThrough(outlineMaterial()));
+  const solid = new Mesh(geometry, applySeeThrough(material));
 
   for (const mesh of [outline, solid]) {
     if (position) mesh.position.copy(position);

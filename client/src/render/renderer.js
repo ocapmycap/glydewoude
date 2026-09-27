@@ -25,6 +25,7 @@ import { createForest } from './trees.js';
 import { createStructures } from './structures.js';
 import { createSquirrel } from './squirrel.js';
 import { createFollowCamera } from './follow-camera.js';
+import { createSeeThrough } from './see-through.js';
 
 export function createRenderer(canvas, world) {
   const renderer = new WebGLRenderer({ canvas, antialias: true });
@@ -53,8 +54,13 @@ export function createRenderer(canvas, world) {
   ground.position.y = world.config.groundY;
   scene.add(ground);
 
-  scene.add(createForest(world));
+  const forest = createForest(world);
+  scene.add(forest);
   scene.add(createStructures(world));
+
+  // Trees between the camera and the squirrel go see-through (LAN-572); it
+  // needs the forest group to raycast against for line of sight.
+  const seeThrough = createSeeThrough(forest);
 
   const squirrel = createSquirrel();
   scene.add(squirrel.object);
@@ -115,6 +121,7 @@ export function createRenderer(canvas, world) {
       );
 
       followCamera.update(motion, glider.phase, dt);
+      seeThrough.update(camera.position, squirrel.object.position, dt);
       renderer.render(scene, camera);
     },
 

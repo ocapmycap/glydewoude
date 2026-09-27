@@ -30,6 +30,7 @@ import {
 import { TREE_TYPES, createRng, hashSeed, randRange } from '@glidewood/shared';
 
 import { PALETTE, mixColor, outlineMaterial, toonMaterial } from './materials.js';
+import { applySeeThrough } from './see-through.js';
 import { createGreatTree } from './great-tree.js';
 import { createToweringTrees } from './towering-trees.js';
 
@@ -234,11 +235,11 @@ export function createForest(world) {
   const canopyCount = trees.length * (CANOPY_BLOBS.length + TUFTS_PER_TREE);
 
   const barkTexture = createBarkTexture();
-  const trunkMaterial = toonMaterial(0xffffff, { map: barkTexture });
+  const trunkMaterial = applySeeThrough(toonMaterial(0xffffff, { map: barkTexture }));
   const trunks = buildInstanced(trunkGeometry, trunkMaterial, trunkCount);
-  const canopies = buildInstanced(canopyGeometry, toonMaterial(0xffffff), canopyCount);
-  const trunkOutlines = buildInstanced(trunkGeometry, outlineMaterial(), trunkCount);
-  const canopyOutlines = buildInstanced(canopyGeometry, outlineMaterial(), canopyCount);
+  const canopies = buildInstanced(canopyGeometry, applySeeThrough(toonMaterial(0xffffff)), canopyCount);
+  const trunkOutlines = buildInstanced(trunkGeometry, applySeeThrough(outlineMaterial()), trunkCount);
+  const canopyOutlines = buildInstanced(canopyGeometry, applySeeThrough(outlineMaterial()), canopyCount);
 
   const dummy = new Object3D();
   const hull = new Matrix4();
@@ -307,8 +308,8 @@ export function createForest(world) {
     // Straight-sided: squashing the tapered trunk cylinder this thin would
     // pull the band's top edge inside the bark.
     const bandGeometry = new CylinderGeometry(1, 1, 1, 7, 1);
-    const bands = buildInstanced(bandGeometry, toonMaterial(PALETTE.beechBand), bandCount);
-    const bandOutlines = buildInstanced(bandGeometry, outlineMaterial(), bandCount);
+    const bands = buildInstanced(bandGeometry, applySeeThrough(toonMaterial(PALETTE.beechBand)), bandCount);
+    const bandOutlines = buildInstanced(bandGeometry, applySeeThrough(outlineMaterial()), bandCount);
     let bandIndex = 0;
     for (const tree of puzzleTrees) {
       // A short tree with a wide canopy can have next to no bare trunk; the

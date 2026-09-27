@@ -27,6 +27,7 @@ import {
 import { createRng, hashSeed, randRange } from '@glidewood/shared';
 
 import { PALETTE, mixColor, outlineMaterial, toonMaterial } from './materials.js';
+import { applySeeThrough } from './see-through.js';
 
 /** How much bigger the inverted hull is than the mesh it outlines. */
 const OUTLINE_SCALE = 1.035;
@@ -141,20 +142,20 @@ export function createToweringTrees(trees, { barkTexture, canopyGeometry }) {
   const trunkGeometry = createTrunkGeometry(bark, fog);
   const hullGeometry = createTrunkGeometry(outline, fog);
 
-  const trunkMaterial = toonMaterial(0xffffff, {
+  const trunkMaterial = applySeeThrough(toonMaterial(0xffffff, {
     vertexColors: true,
     ...(barkTexture ? { map: barkTexture } : {}),
-  });
-  const trunkOutlineMaterial = outlineMaterial();
+  }));
+  const trunkOutlineMaterial = applySeeThrough(outlineMaterial());
   trunkOutlineMaterial.color.set(0xffffff);
   trunkOutlineMaterial.vertexColors = true;
-  const canopyOutlineMaterial = outlineMaterial();
+  const canopyOutlineMaterial = applySeeThrough(outlineMaterial());
   canopyOutlineMaterial.color.copy(mixColor(PALETTE.outline, PALETTE.fog, CANOPY_OUTLINE_HAZE));
 
   const canopyCount = trees.length * CANOPY_BLOBS.length;
   const trunks = new InstancedMesh(trunkGeometry, trunkMaterial, trees.length);
   const trunkOutlines = new InstancedMesh(hullGeometry, trunkOutlineMaterial, trees.length);
-  const canopies = new InstancedMesh(canopyGeometry, toonMaterial(0xffffff), canopyCount);
+  const canopies = new InstancedMesh(canopyGeometry, applySeeThrough(toonMaterial(0xffffff)), canopyCount);
   const canopyOutlines = new InstancedMesh(canopyGeometry, canopyOutlineMaterial, canopyCount);
 
   const dummy = new Object3D();
