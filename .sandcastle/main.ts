@@ -20,7 +20,7 @@ const BRANCH = "agent/glidewood-20260927-0250";
 
 // One Linear issue per iteration. A run stops early once the list is empty. An
 // iteration that dies before closing its issue leaves it open for the next one.
-const MAX_ITERATIONS = 5;
+const MAX_ITERATIONS = 20;
 
 // Nothing to do is worth knowing before a container starts.
 const open = JSON.parse(
@@ -29,7 +29,9 @@ const open = JSON.parse(
   }),
 );
 if (open.length === 0) {
-  console.log("No open Glidewood issues are labelled ready-for-agent in Linear.");
+  console.log(
+    "No open Glidewood issues are labelled ready-for-agent in Linear.",
+  );
   process.exit(0);
 }
 
@@ -53,9 +55,10 @@ function onAgentStreamEvent(event: AgentStreamEvent) {
   if (event.type !== "toolCall") return;
   const args = event.formattedArgs.replace(/\s+/g, " ");
   status.lastStep = `${event.name}: ${args.length > 70 ? `${args.slice(0, 70)}…` : args}`;
-  const tracker = /tracker\.mjs (view|close) ([A-Z]+-\d+)( --needs-human)?/.exec(
-    event.formattedArgs,
-  );
+  const tracker =
+    /tracker\.mjs (view|close) ([A-Z]+-\d+)( --needs-human)?/.exec(
+      event.formattedArgs,
+    );
   if (tracker === null) return;
   const [, command, id, needsHuman] = tracker;
   if (command === "view") status.issue = id;
