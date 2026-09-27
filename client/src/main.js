@@ -27,6 +27,7 @@ import { createLeafBurst } from './render/leaf-burst.js';
 import { createMilestoneBurst } from './ui/milestone-burst.js';
 import { createRings } from './render/rings.js';
 import { createWind } from './render/wind.js';
+import { createButterflies } from './render/butterflies.js';
 import { createPuzzlePrompt } from './ui/puzzle-prompt.js';
 import {
   createTreeLabels, isPuzzleTree, labelAnchor, labelFontPx, labelText, labelledTrees, treeLabelState,
@@ -222,3 +223,8 @@ createPuzzlePrompt(overlay, simulation);
 // Streaks and leaves drifting on the wind near the camera. Visual only: the
 // simulation never hears about it (D-61).
 createWind(renderer.scene, world);
+
+// Butterflies fluttering near the camera (LAN-574). Visual only, like wind;
+// they read the glider state the renderer draws so a group can scatter from
+// the squirrel (D-76).
+createButterflies(renderer.scene, world, { glider: () => simulation.glider });

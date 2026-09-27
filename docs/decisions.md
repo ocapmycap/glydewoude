@@ -1678,3 +1678,58 @@ free; centring the panel instead, like the shop, would have put a mostly
 static reference card over the same ground a player glides through constantly,
 which the shop can get away with only because opening it is already a
 deliberate stop.
+
+## D-76 — Butterflies are render-only, and read the squirrel through a getter
+
+**Ambiguity.** LAN-574 wants butterflies that scatter when the squirrel
+passes, but `render/` must not import `sim/`, and wind (the closest pattern)
+steps itself in `onBeforeRender` without ever seeing the glider. The issue
+leaves open how the squirrel's position reaches the effect.
+
+**Decision.** `createButterflies(scene, world, { glider })` in
+`client/src/render/butterflies.js` takes an optional getter that returns the
+same glider state object `renderer.render` draws. `main.js` passes
+`() => simulation.glider`, next to `createWind`. The effect reads
+`motion.x/y/z` from it once per frame and never writes anything back. There
+is no collecting, reward, event or server involvement, and nothing reaches
+`sim/` or `shared/`. Like wind, it uses `Math.random` and wall time freely,
+since render is outside the determinism rule.
+
+**Reasoning.** A getter keeps the wiring to one line beside wind, with no
+extra per-frame call added to the loop's `render` callback. It also means the
+module works without the squirrel at all: the default returns `null`, and
+nothing scatters.
+
+## D-77 — Butterfly pool: 10 groups of up to 4, respawned ahead of the camera
+
+**Ambiguity.** The issue fixes the target (3–8 butterflies within about 40 m
+of the camera, groups of 1–4, a pool of about 40, one `InstancedMesh`) but not
+the numbers that produce it, nor how a single mesh can flap two wings per
+butterfly.
+
+**Decision.** 10 groups × 4 slots = 40 butterflies. Each spawn draws a group
+size from `[1, 1, 2, 2, 2, 3, 3, 4]`, so about 22 are in the air at once, and
+the unused slots are scaled to zero. Each butterfly is two instances of one
+wing geometry, the second mirrored with a negative X scale. Flapping is a
+per-instance roll about the body, so the 80 instances are one draw call. A
+group is recycled when its centre is more than 85 m from the camera in 3D.
+It respawns 22–70 m away, within ±108° of the camera's facing, choosing
+between near a perch (45%, the nearest perch tree within 25 m), low over the
+floor (20%), or around the camera's height (the rest). It falls back to the
+camera's height when the first choice would be out of range. Groups grow in
+over 0.8 s and shrink inside 1–2.5 m of the lens, since toon materials cannot
+fade per instance (D-43). Each butterfly traces a two-sine loop around its
+drifting group centre and rests for 1–3 s every 4–10 s. A floor butterfly
+settles onto the ground. The others hover with their wings raised. The
+squirrel within 4 m of any butterfly scatters its whole group away and up at
+5 m/s and 3 m/s, decaying over 2.5 s. Wings take four new `PALETTE` entries,
+appended: white, pale yellow, orange and blue, one colour per group.
+
+**Reasoning.** A headless run of the module on the default seed, not
+committed, sampled the count within 40 m of a camera gliding at 12 m/s for two
+minutes. It gave a median of 5, with fewer than 2% of samples empty. A
+stationary camera gave a median of 7. The occasional peak above 8 happens
+when a group of 4 lands close by, and removing it would take a larger pool
+of smaller groups, which reads more like a swarm. The mirrored-instance
+wings meet the one-mesh budget without a custom shader, which is Phase 4 art
+work.

@@ -60,6 +60,13 @@ export const PALETTE = Object.freeze({
   // gold of ringNext, so a beacon reads as "look here" and a ring as "fly
   // through here".
   beacon: 0xffd27a,
+  // Butterflies (butterflies.js): soft, a little chalky, so they read as
+  // small life against the greens without outshining a puzzle tree's canopy
+  // or a beacon (D-77).
+  butterflyWhite: 0xf6f1e4,
+  butterflyYellow: 0xf1dd86,
+  butterflyOrange: 0xeea055,
+  butterflyBlue: 0x8db6e3,
 });
 
 /**
