@@ -920,3 +920,42 @@ material collection.
 **Reasoning.** Returning events mirrors `runs.extend` and keeps the trial
 testable without a simulation. Naming the puzzle tree in every event lets the
 UI (LAN-549) and the server intent (LAN-550) key on one id.
+
+## D-55 — The target gets a gold cone hanging over its perch, and is "the marked tree" when unnamed
+
+**Ambiguity.** LAN-549 leaves the target marker to the implementer, and asks
+for a prompt reading "land on <target name>". In the default world every
+course targets an unnamed scenery tree (D-49 picks targets from any lower
+tree), so there is usually no name to show.
+
+**Decision.** One upside-down cone, outlined, in the same gold as the next
+ring (`PALETTE.ringNext`), hangs 3.2 m above the target's perch while its
+trial is armed or flying, and hides with the rings. The prompt uses the
+target's `name` when it has one and "the marked tree" otherwise. Rings still
+ahead are pale cream (`PALETTE.ring`); the next ring due is gold; passed rings
+drop their outline and fade to 30 % opacity rather than disappearing.
+
+**Reasoning.** A marker the player can see from the puzzle tree does the job a
+name cannot, and sharing the next ring's colour makes "fly through gold, land
+under gold" a single rule. Naming targets would change worldgen output for
+existing trees, which is out of scope here. Keeping passed rings faintly
+visible shows the line already flown.
+
+## D-56 — Rings are driven by events, and a respawn hides them
+
+**Ambiguity.** The simulation clears an armed trial that never launched on a
+respawn without emitting any `puzzle:*` event (D-54), so a renderer that only
+listens to puzzle events would leave the rings up.
+
+**Decision.** `main.js` shows a course on `puzzle:armed`, advances it on
+`puzzle:ring`, and hides it on `puzzle:solved`, `puzzle:failed` or
+`glide:respawned`. The prompt clears its line on `glide:respawned` the same
+way. Every course's rings are built once at startup and toggled, not built
+when a trial arms.
+
+**Reasoning.** The issue asks for the wiring to follow the simulation's
+events. Adding a respawn event to the trial would change sim/ for a display
+concern. Events arrive in order, so a failure followed by a re-arm on the
+same landing (D-53) hides and then shows the right course. With at most three
+courses of three rings, building them all up front costs less than a stall on
+the frame a trial arms.

@@ -525,3 +525,58 @@ kbd {
     animation-name: milestone-burst-still;
   }
 }
+
+/* --- puzzle prompt ------------------------------------------------------ */
+
+/* Bottom centre: well below the squirrel, clear of the flight HUD and the
+   opening hint (bottom-left), and small enough to read at a glance mid-glide.
+   The line holds while a trial is armed or flying; the flash under it is the
+   one-off solve or fail beat and fades on its own (--flash-ms). */
+.puzzle-prompt {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.puzzle-prompt-line,
+.puzzle-prompt-flash {
+  padding: 0.3rem 0.9rem;
+  border: 1px solid var(--paper-edge);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.puzzle-prompt-line:empty,
+.puzzle-prompt-flash:empty {
+  display: none;
+}
+
+.puzzle-prompt-flash {
+  font-weight: 600;
+  animation: puzzle-prompt-flash var(--flash-ms, 2200ms) ease-out forwards;
+}
+
+.puzzle-prompt-flash[data-outcome='solved'] {
+  color: var(--accent);
+}
+
+@keyframes puzzle-prompt-flash {
+  0% {
+    opacity: 0;
+  }
+  12%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}

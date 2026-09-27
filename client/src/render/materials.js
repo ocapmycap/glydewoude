@@ -37,6 +37,10 @@ export const PALETTE = Object.freeze({
   squirrelBody: 0xb2703c,
   squirrelBelly: 0xf0dcb8,
   squirrelMembrane: 0xd88c4a,
+  // Puzzle rings (rings.js): pale cream for rings still ahead, a warm gold
+  // for the next one due and the target marker, so "go here" is one colour.
+  ring: 0xf4ead0,
+  ringNext: 0xffc83d,
 });
 
 /**

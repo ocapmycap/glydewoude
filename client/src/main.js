@@ -24,6 +24,8 @@ import { createShop } from './ui/shop.js';
 import { createRunHud } from './ui/run-hud.js';
 import { createLeafBurst } from './render/leaf-burst.js';
 import { createMilestoneBurst } from './ui/milestone-burst.js';
+import { createRings } from './render/rings.js';
+import { createPuzzlePrompt } from './ui/puzzle-prompt.js';
 
 import './style.css';
 
@@ -122,3 +124,15 @@ simulation.on((event) => event.type === 'glide:landed' && event.reason === 'perc
 
 // A brief "Chain of 5!" whenever a run reaches a milestone.
 createMilestoneBurst(overlay, simulation);
+
+// Ring trials (LAN-549). The simulation decides every pass and failure; the
+// rings are only told which course is armed and which ring index was passed.
+// A respawn while armed but not yet launched clears the trial without a
+// puzzle event, so it hides the rings too; any re-arm follows it.
+const rings = createRings(renderer.scene, world);
+simulation.on((event) => {
+  if (event.type === 'puzzle:armed') rings.show(event.tree.id);
+  else if (event.type === 'puzzle:ring') rings.pass(event.index);
+  else if (['puzzle:solved', 'puzzle:failed', 'glide:respawned'].includes(event.type)) rings.hide();
+});
+createPuzzlePrompt(overlay, simulation);
