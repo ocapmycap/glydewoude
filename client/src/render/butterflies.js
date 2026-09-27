@@ -87,8 +87,26 @@ const PATH_RADIUS_RANGE = [1.2, 2.5];
 const PATH_FREQUENCY_RANGE = [0.25, 0.5];
 const PATH_BOB = 0.6;
 
-/** Wingbeats per second in normal flight. */
-const FLAP_RATE_RANGE = [7, 11];
+/**
+ * Wingbeats per second in normal flight. Big butterflies beat slowly; much
+ * faster and they read as flies or bees (D-84).
+ */
+const FLAP_RATE_RANGE = [2, 3.5];
+/**
+ * Normal flight comes in bursts of a few beats, each followed by a glide on
+ * wings held partly open. The lazy flap-flap-glide rhythm is most of what
+ * says "butterfly" (D-84).
+ */
+const BURST_BEATS_RANGE = [2, 5];
+const GLIDE_RANGE = [0.4, 1.2];
+/** Wing angle held through a glide, in radians, 0 being flat. */
+const GLIDE_ANGLE = 0.25;
+/** Seconds to ease the wings into or out of a glide, so the beat never snaps. */
+const GLIDE_EASE = 0.15;
+/** Wingbeats per second at the start of a scatter: livelier, but no buzz, and no glides. */
+const SCATTER_FLAP_RATE_RANGE = [4, 6];
+/** Share of the scatter spent at the full scatter rate before easing back to normal. */
+const SCATTER_FLAP_HOLD = 0.5;
 /** Wing angle about the body in flight: centre and swing, in radians, 0 being flat. */
 const FLAP_CENTRE = 0.35;
 const FLAP_SWING = 0.75;
@@ -124,6 +142,11 @@ const MAX_STEP = 0.1;
 
 function between([min, max]) {
   return min + Math.random() * (max - min);
+}
+
+function burstBeats() {
+  const [min, max] = BURST_BEATS_RANGE;
+  return min + Math.floor(Math.random() * (max - min + 1));
 }
 
 /** 0 at the near edge of `CAMERA_CLEAR_RANGE` and closer, 1 beyond its far edge. */
@@ -187,7 +210,8 @@ export function createButterflies(
   }));
   const butterflies = Array.from({ length: BUTTERFLY_COUNT }, () => ({
     t: 0, fx: 0, fy: 0, fz: 0, px: 0, py: 0, pz: 0, radius: 0,
-    x: 0, y: 0, z: 0, heading: 0, flap: 0, flapRate: 0,
+    x: 0, y: 0, z: 0, heading: 0, flap: 0, flapRate: 0, scatterFlapRate: 0,
+    beats: 0, glide: 0, glideBlend: 0,
     rest: 0, untilRest: 0, settle: 0, size: 1,
   }));
   const scratch = new Object3D();
@@ -290,6 +314,10 @@ export function createButterflies(
       b.radius = between(PATH_RADIUS_RANGE);
       b.flap = Math.random() * Math.PI * 2;
       b.flapRate = between(FLAP_RATE_RANGE) * Math.PI * 2;
+      b.scatterFlapRate = between(SCATTER_FLAP_RATE_RANGE) * Math.PI * 2;
+      b.beats = burstBeats();
+      b.glide = 0;
+      b.glideBlend = 0;
       b.rest = 0;
       b.untilRest = between(FLIGHT_RANGE);
       b.settle = 0;
@@ -393,7 +421,28 @@ export function createButterflies(
 
         // The path clock slows to a stop into a rest and races in a scatter.
         b.t += dt * (1 - b.settle) * (1 + 2 * fright);
-        b.flap += dt * b.flapRate * (1 - b.settle) * (1 + fright);
+        // A scatter cuts any glide short and holds the scatter rate for a
+        // while, easing back to the normal beat as the group calms.
+        const alarm = Math.min(1, fright / (1 - SCATTER_FLAP_HOLD));
+        if (fright > 0) b.glide = 0;
+        else if (b.glide > 0) b.glide -= dt;
+        const glideStep = dt / GLIDE_EASE;
+        b.glideBlend = b.glide > 0 ? Math.min(1, b.glideBlend + glideStep) : Math.max(0, b.glideBlend - glideStep);
+        if (b.glide <= 0) {
+          const rate = b.flapRate + (b.scatterFlapRate - b.flapRate) * alarm;
+          const before = Math.floor(b.flap / (Math.PI * 2));
+          b.flap += dt * rate * (1 - b.settle);
+          const beaten = Math.floor(b.flap / (Math.PI * 2)) - before;
+          if (beaten > 0 && fright === 0) {
+            b.beats -= beaten;
+            if (b.beats <= 0) {
+              // The phase stops where a beat begins, wings mid-swing and near
+              // the glide angle, so easing into the glide barely moves them.
+              b.glide = between(GLIDE_RANGE);
+              b.beats = burstBeats();
+            }
+          }
+        }
         const wx = Math.sin(b.fx * b.t + b.px) + 0.4 * Math.sin(2.3 * b.fx * b.t + b.pz);
         const wz = Math.cos(b.fz * b.t + b.pz) + 0.4 * Math.sin(1.7 * b.fz * b.t + b.px);
         const x = group.x + wx * b.radius;
@@ -404,12 +453,14 @@ export function createButterflies(
         b.x = x;
         b.z = z;
 
-        const flying = group.y + Math.sin(b.fy * b.t + b.py) * PATH_BOB + Math.sin(b.flap) * FLAP_BOB;
+        const flying = group.y + Math.sin(b.fy * b.t + b.py) * PATH_BOB
+          + Math.sin(b.flap) * FLAP_BOB * (1 - b.glideBlend);
         const floorY = groundY + GROUND_CLEARANCE;
         const resting = group.floor ? groundY + FLOOR_REST_HEIGHT : Math.max(floorY, flying);
         b.y = Math.max(floorY, flying) * (1 - b.settle) + resting * b.settle;
 
-        const flyAngle = FLAP_CENTRE + Math.sin(b.flap) * FLAP_SWING;
+        const beatAngle = FLAP_CENTRE + Math.sin(b.flap) * FLAP_SWING;
+        const flyAngle = beatAngle * (1 - b.glideBlend) + GLIDE_ANGLE * b.glideBlend;
         const restAngle = REST_ANGLE + Math.sin(clock * 1.5 + b.px) * REST_FAN;
         const angle = flyAngle * (1 - b.settle) + restAngle * b.settle;
         const clear = cameraClearance(

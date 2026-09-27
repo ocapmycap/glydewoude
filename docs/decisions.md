@@ -1791,3 +1791,29 @@ ring placement, so the server can rebuild the course from the seed
 become puzzles can still change, because viability depends on the reach
 check. That follows from the check the issue asked to replace, not from a new
 draw on the rng.
+
+## D-84 — Butterflies beat slowly in bursts and glide between them
+
+**Ambiguity.** LAN-582 sets the numbers: 2–3.5 beats per second, bursts of
+2–5 beats, 0.4–1.2 s glides, and 4–6 beats per second with no glides while
+scattering. It leaves open what "partly open" means as a wing angle, how a
+glide starts and ends without the wings snapping, and how the scatter rate
+hands back to the normal one as the scatter decays.
+
+**Decision.** In `client/src/render/butterflies.js`, each butterfly draws its
+own normal and scatter wingbeat rates and counts whole beats. When a burst's
+beats run out, the flap phase stops where a beat begins and the wings ease
+over 0.15 s to 0.25 rad, a shallow V, for the glide. The downstroke bob fades
+with them. They ease back out when the glide ends. A scatter cancels any
+glide and stops beat counting. The rate holds at the scatter rate for the
+first half of the 2.5 s scatter and then eases linearly back to the normal
+rate. This replaces the old `1 + fright` multiplier. Paths, path speed, rests,
+density and scatter distance are unchanged.
+
+**Reasoning.** Stopping the phase where a beat begins leaves the wings
+mid-swing at 0.35 rad, close to the 0.25 rad glide angle, so the short ease
+reads as the butterfly settling its wings, not as a jump. Per-butterfly
+rates, burst lengths and glide lengths, together with the random starting
+phase, keep a group out of step. Holding the scatter rate through the first
+half of the scatter gives the startle a visibly livelier beat. Easing back
+means the group does not drop to a slow beat all at once.
