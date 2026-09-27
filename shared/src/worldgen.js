@@ -10,8 +10,8 @@
  * Pure — imports nothing from the client and touches no Three.js.
  */
 
-import { TREE_TYPES, WORLD_CONFIG } from './constants.js';
-import { createRng, hashSeed, randRange } from './rng.js';
+import { TREE_TYPES, WORLD_CONFIG, STRUCTURE_KINDS } from './constants.js';
+import { createRng, hashSeed, randRange, randPick } from './rng.js';
 import { distance2D } from './math.js';
 
 /**
@@ -29,6 +29,9 @@ import { distance2D } from './math.js';
  * @property {number} canopyDepth   how far below the perch the canopy catches you
  * @property {number} catchRadius   trunk grab radius, below the canopy
  * @property {number} minCatchY     lowest altitude at which the trunk catches you
+ * @property {Array<{kind:string, offset:{x:number,y:number,z:number}, rotation:number}>} structures
+ *   Decorative dreys/platforms tucked into the canopy, relative to `position`.
+ *   Drawing only — nothing in landing or glide reads this.
  */
 
 const LANDMARK_NAMES = [
@@ -62,7 +65,55 @@ function makeTree(id, spec, config) {
     canopyDepth: spec.canopyRadius * config.canopyDepthFactor,
     catchRadius: spec.trunkRadius + config.catchMargin,
     minCatchY: spec.position.y + spec.trunkHeight * config.minCatchHeightFraction,
+    structures: [],
   };
+}
+
+/**
+ * Roll one structure's placement, tucked into or just under the canopy.
+ * offset is relative to `tree.position` (the trunk base).
+ */
+function rollStructure(rng, tree, kind) {
+  const angle = rng() * Math.PI * 2;
+  // Keep it well inside the canopy silhouette, never at the very edge.
+  const horizontal = randRange(rng, 0.25, 0.7) * tree.canopyRadius;
+  return {
+    kind,
+    offset: {
+      x: Math.cos(angle) * horizontal,
+      y: tree.trunkHeight - randRange(rng, 0.1, 0.45) * tree.canopyDepth,
+      z: Math.sin(angle) * horizontal,
+    },
+    rotation: rng() * Math.PI * 2,
+  };
+}
+
+/**
+ * Decide a destination tree's structures.
+ *
+ * Called in a pass *after* every tree is built, not inside the per-tree
+ * construction loop above — consuming the rng there would shift every later
+ * tree's height, radius and destination roll and change the whole forest
+ * layout. Walking `trees` in order afterwards keeps the scatter identical and
+ * just continues the same rng stream for decoration.
+ */
+function placeStructures(rng, tree) {
+  if (!tree.isDestination) return [];
+
+  if (tree.id === 'tree-great') {
+    const structures = [rollStructure(rng, tree, STRUCTURE_KINDS.PLATFORM)];
+    if (rng() < 0.5) {
+      structures.push(rollStructure(rng, tree, randPick(rng, Object.values(STRUCTURE_KINDS))));
+    }
+    return structures;
+  }
+
+  const count = rng() < 0.5 ? 1 : 2;
+  const structures = [];
+  for (let i = 0; i < count; i += 1) {
+    structures.push(rollStructure(rng, tree, randPick(rng, Object.values(STRUCTURE_KINDS))));
+  }
+  return structures;
 }
 
 /**
@@ -148,11 +199,18 @@ export function generateForest(overrides = {}) {
     );
   });
 
+  // One more pass over the finished trees, continuing the same rng stream —
+  // see placeStructures for why this cannot happen inside the loop above.
+  const treesWithStructures = trees.map((tree) => ({
+    ...tree,
+    structures: placeStructures(rng, tree),
+  }));
+
   return {
     seed,
     seedLabel: String(config.seed),
     config,
-    trees,
+    trees: treesWithStructures,
     spawnTreeId: 'tree-great',
     bounds: { radius: config.areaRadius },
   };

@@ -245,3 +245,63 @@ describe('run mode', () => {
     expect(fly()).toEqual(fly());
   });
 });
+
+describe('run milestones', () => {
+  it('fires run:milestone at chains 3, 5 and 10, each exactly once, right after the matching run:extended', () => {
+    const simulation = createSimulation({ world: generateForest() });
+    const input = createInputState();
+    const events = recordEvents(simulation);
+
+    for (let hop = 0; hop < 10; hop += 1) flyOneHop(simulation, input);
+
+    const landings = events.filter((event) => event.type === 'glide:landed');
+    expect(landings.every((event) => event.reason === 'perch')).toBe(true);
+    expect(simulation.run.chain).toBe(10);
+
+    const milestones = events.filter((event) => event.type === 'run:milestone');
+    expect(milestones.map((event) => event.chain)).toEqual([3, 5, 10]);
+
+    for (const milestone of milestones) {
+      // Nothing to bank or score here — a milestone is purely a moment to
+      // celebrate, not a reward.
+      expect(milestone.points).toBeUndefined();
+      expect(milestone.run.chain).toBe(milestone.chain);
+
+      const index = events.indexOf(milestone);
+      expect(events[index - 1].type).toBe('run:extended');
+      expect(events[index - 1].run.chain).toBe(milestone.chain);
+    }
+  });
+
+  it('does not fire any milestone for a chain of only 2', () => {
+    const simulation = createSimulation({ world: generateForest() });
+    const input = createInputState();
+    const events = recordEvents(simulation);
+
+    for (let hop = 0; hop < 2; hop += 1) flyOneHop(simulation, input);
+
+    expect(simulation.run.chain).toBe(2);
+    expect(events.filter((event) => event.type === 'run:milestone')).toHaveLength(0);
+  });
+
+  it('can fire the same thresholds again once a new run starts', () => {
+    const simulation = createSimulation({ world: generateForest() });
+    const input = createInputState();
+    const events = recordEvents(simulation);
+
+    for (let hop = 0; hop < 3; hop += 1) flyOneHop(simulation, input);
+    expect(events.filter((event) => event.type === 'run:milestone')).toHaveLength(1);
+
+    input.respawn = true;
+    simulation.step(input, FIXED_DT);
+    input.respawn = false;
+
+    for (let hop = 0; hop < 3; hop += 1) flyOneHop(simulation, input);
+
+    const milestones = events.filter((event) => event.type === 'run:milestone');
+    expect(milestones).toHaveLength(2);
+    expect(milestones.map((event) => event.chain)).toEqual([3, 3]);
+    // Each belongs to a distinct run, not the one that already ended.
+    expect(milestones[0].run).not.toBe(milestones[1].run);
+  });
+});

@@ -21,6 +21,9 @@ import { createInputBindings } from './ui/input.js';
 import { createHud } from './ui/hud.js';
 import { createTuningPanel } from './ui/tuning-panel.js';
 import { createShop } from './ui/shop.js';
+import { createRunHud } from './ui/run-hud.js';
+import { createLeafBurst } from './render/leaf-burst.js';
+import { createMilestoneBurst } from './ui/milestone-burst.js';
 
 import './style.css';
 
@@ -73,11 +76,12 @@ simulation.on((event) => {
 
 // Bank a finished run against the server's best. It subscribes itself to
 // `run:ended`; the run HUD (T4) can read `.best` and `.onBest` once it lands.
-createRunSync({ session, simulation });
+const runSync = createRunSync({ session, simulation });
 
 const hud = createHud(overlay, simulation);
 const tuning = createTuningPanel(overlay, simulation);
 const shop = createShop(overlay, { session, simulation });
+createRunHud(overlay, { simulation, runSync });
 const bindings = createInputBindings(input, canvas, {
   onToggleTuning: () => tuning.toggle(),
   onToggleShop: () => shop.toggle(),
@@ -110,3 +114,11 @@ const loop = createLoop({
 });
 
 loop.start();
+
+// A puff of leaves on every caught branch. Ground landings get none: the
+// squirrel missed, and the tree it scampers up was not caught.
+const leafBurst = createLeafBurst(renderer.scene);
+simulation.on((event) => event.type === 'glide:landed' && event.reason === 'perch' && leafBurst.burst(event.tree));
+
+// A brief "Chain of 5!" whenever a run reaches a milestone.
+createMilestoneBurst(overlay, simulation);

@@ -606,3 +606,212 @@ the server, so posting one would waste the request the ticket says to save. A
 subscription rather than a constructor callback means T4 can attach to the
 sync without editing the line that builds it, which keeps the `main.js`
 conflict the ticket expects small.
+
+## D-34 — The run HUD names the sync, keeps a session best, and skips unbankable runs
+
+**Ambiguity.** T4 asks for "your best" and a verdict on whether the run beat
+it, but T5's sync only learns a best from the server, and the `main.js` line
+that builds it discarded the return value. The ticket also does not say what a
+one-landing run shows when it ends, or whether a respawn counts.
+
+**Decision.** `main.js` now keeps the sync as `const runSync = createRunSync(...)`
+— a change to T5's line rather than a pure append, because there was no other
+way to reach `best` and `onBest`. The HUD shows the higher of the sync's best
+and a best it keeps for this session, so offline play still has a best that
+simply does not survive a reload. A run below `minChainToBank` updates the
+counters but raises no end card and never counts as a best, matching
+`isBankable` in the sync. Ground and respawn endings both get the card; only
+the title differs ("run over" or "home again").
+
+**Reasoning.** The session best is a `Math.max` over final scores the
+simulation already computed, so the HUD still does no run arithmetic. Using
+`isBankable` for the card means the HUD and the server agree on what counts as
+a run. The verdict is judged against the best known *before* the run ended —
+the sync's server round-trip resolves later and can only raise the best, which
+`onBest` then shows.
+
+## D-36 — `extend` returns a list of run events, and milestones carry no reward
+
+**Ambiguity.** LAN-518 asks the run tracker to return `run:milestone`
+"alongside" `run:extended`, but D-31 has `extend` returning one event or
+`null`. The ticket also says each threshold fires once per run without saying
+where that is remembered.
+
+**Decision.** `extend` now returns an array: empty when no run is going,
+otherwise `run:extended` followed by `run:milestone` when the new chain equals
+a value in `RUN_TUNING.milestoneChains`. `createSimulation` emits the array in
+order. `start` and `end` keep D-31's event-or-`null` shape. The tracker
+remembers which thresholds a run has fired and forgets them when the next run
+starts. A milestone event carries the run and the chain, and nothing else.
+
+**Reasoning.** D-31's point was that every run `emit` sits in one function so
+the order is readable there. A list keeps that: `run:milestone` can only come
+out right after the extension that caused it. A separate `checkMilestone` call
+would have put that ordering back on the caller. Chains only grow by one per
+landing, so "exactly a threshold" already fires each once per run. The
+remembered set guards against a future rule that lets a chain repeat a
+length. No `points` field keeps the milestone from becoming currency (D-28).
+
+## D-38 — Tree detail rides on the existing instances, not new meshes
+
+**Ambiguity.** LAN-519 offers two ways to break up the canopy (jitter the
+geometry, or add smaller leaf clusters) and says the forest must stay "a
+handful of draw calls" without saying whether new instanced meshes count.
+
+**Decision.** Both, with no new draw calls. The shared canopy icosahedron has
+its corners pushed in or out by up to 18%, seeded from a fixed string, keyed by
+position so the mesh and its outline hull stay closed. Each tree also gets four
+smaller leaf tufts around its rim, drawn as extra instances of the canopy mesh
+in a slightly lighter shade. Bark is one 64×128 canvas texture of near-white
+vertical grooves, used as the trunk material's `map` so the per-instance bark
+colour still sets the hue and `MeshToonMaterial` still bands the lighting.
+Canopy and bark colour, tuft placement and blob spin come from an RNG seeded
+with `hashSeed('render:' + tree.id)`. The world seed's own stream is not used,
+so render-only variety can never shift worldgen. Destination canopies drift at
+most 25% toward green, so they still read as gold from the air. Tufts and
+jittered corners reach a little past `canopyRadius`. That changes the drawing
+only: perch and catch radii are untouched.
+
+**Reasoning.** The instance count grows with the forest, but the draw-call
+count stays at four. Seeding from the id rather than the array index keeps a
+tree's look stable if worldgen later inserts or reorders trees.
+
+## D-40 — Structures ride the world rng after the trees, relative to the trunk base
+
+**Ambiguity.** LAN-520 asks for drey and platform placement drawn from the
+seeded worldgen RNG, "relative to the tree", but does not say where in the rng
+stream to draw them, what point the offset is measured from, or what "inside or
+just under the canopy" means as numbers.
+
+**Decision.** `generateForest` builds every tree exactly as before, then makes
+one more pass in tree order and gives each destination tree its `structures`
+from the same rng, continuing its stream. Scenery trees get `[]` and draw
+nothing. `offset` is measured from `tree.position`, the trunk base, so the
+renderer places a structure at `position + offset`. Horizontally it sits
+between 25% and 70% of `canopyRadius` from the trunk. Vertically it sits
+between 10% and 45% of `canopyDepth` below the perch. `rotation` is a
+yaw in [0, 2π). Destination trees get one or two structures of either kind,
+evenly. The great tree's first structure is always a platform.
+
+**Reasoning.** Drawing inside the construction loop would shift every later
+tree's height, radius and destination roll, so the whole forest would change
+for a decoration. Doing it afterwards keeps the layout, the D-8 share and
+every existing test as they were. The vertical band uses `canopyDepth`, which
+`WORLD_CONFIG` already matches to how far the drawn foliage hangs, so a
+structure is never floating above the leaves or buried near the ground. Structures are data only.
+`perchRadius`, `catchRadius` and landing do not read them.
+
+## D-42 — The leaf burst is one pooled InstancedMesh that keeps its own clock
+
+**Ambiguity.** LAN-521 asks for pooled leaves, reused geometry and material,
+and only one import and one wiring line in `main.js`. It does not say how the
+effect advances each frame, since `renderer.render` is not handed events and
+`main.js` should not grow a per-frame call for it.
+
+**Decision.** `client/src/render/leaf-burst.js` allocates four burst slots of
+sixteen leaves as one `InstancedMesh` plus its outline hull, once. A landing
+claims the oldest slot and rewrites its leaves. The effect steps itself from
+the leaf mesh's `onBeforeRender`, timed by `performance.now()`. When no leaf
+is live, it parks every instance at zero scale and skips the step. The meshes
+stay visible so their shaders compile at load, not on the first landing. `main.js` builds it from `renderer.scene` and
+forwards `glide:landed` events whose `reason` is `'perch'`. Ground landings get
+no burst. The squirrel missed, and the tree it scampers up was not caught
+(the same reasoning `simulation.js` uses for the chain). Leaf colours come
+from a local `createRng` stream, never from sim state.
+
+**Reasoning.** A fixed pool means ten rapid landings cost the same two draw
+calls and no allocations. A fifth landing within about a second recycles the
+oldest puff, which by then is mostly gone. Self-timing keeps `renderer.js`
+and the loop untouched. The wiring is one import and two lines, a
+`createLeafBurst` call and a `simulation.on` filter, because `render/` must not
+know sim event names.
+
+## D-43 — Leaves "fade" by shrinking, not by opacity
+
+**Ambiguity.** The issue says the leaves "drift down and fade over about a
+second". `MeshToonMaterial` has one opacity per material, not per instance,
+so the leaves of an instanced burst cannot fade out individually.
+
+**Decision.** Each leaf lives 0.8–1.15 s. It pops in over its first 80 ms and
+shrinks to nothing over the last 45% of its life. The material stays opaque.
+
+**Reasoning.** Shrinking reads as fading at this size and keeps the toon look
+and the outline hull intact. A transparent material would need a custom
+shader for per-instance alpha, and it would also cause sorting artefacts
+against the canopy.
+
+## D-44 — The great tree is its own mesh, drawn in `great-tree.js`
+
+**Ambiguity.** LAN-522 allows the great tree to be drawn in `trees.js` or in a
+new module. It also leaves open whether the instanced forest should still keep
+a slot for it underneath the new drawing.
+
+**Decision.** `createForest` leaves the spawn tree out of the instanced meshes
+and adds `createGreatTree(tree, { barkTexture })` to the forest group. The
+great tree has a twisting trunk with a lobed root flare, 1.3× thicker than
+its worldgen radius, and a canopy of four flattened cones that narrow as they
+go up. The top tier's apex sits about 1.2 m below `perchY`, so the spawn
+camera stays clear of the foliage. The trunk's outline hull scales across the
+trunk only, so it cannot rise above the perch. Perch and catch radii come from
+worldgen and are unchanged.
+
+**Reasoning.** A separate module keeps `trees.js` about the instanced forest.
+The great tree costs about ten extra draw calls, once. `renderer.js` is
+unchanged because the forest group still holds everything. Tiered cones give
+an outline that no blob tree has, so the tree can be recognised by shape
+alone.
+
+## D-45 — `PALETTE.greatAccent` is a warm russet used only by the great tree
+
+**Ambiguity.** The issue suggests an optional warm accent colour from
+`PALETTE`, used nowhere else, but no such entry existed.
+
+**Decision.** Added `greatAccent: 0xc8643a` to `PALETTE`. Each canopy tier
+mixes canopy green toward it, and the top tier is the warmest. The trunk
+keeps `barkGreat`.
+
+**Reasoning.** Russet sets the great tree apart from the gold destination
+canopies (`canopyDestination`) and the green forest while keeping the palette
+warm. Mixing it with green keeps the tree inside the low-saturation look.
+
+## D-46 — Milestone bursts are ranked in CSS, keyed on the event's chain
+
+**Ambiguity.** LAN-523 wants 10 to be louder than 3, but also says the burst
+must read the chain from the event and compute nothing. Ranking a milestone
+against the others would mean reading `RUN_TUNING.milestoneChains`.
+
+**Decision.** `createMilestoneBurst` writes the event's chain into
+`data-chain` and the text "Chain of N!". `style.css` gives `3` the base pill,
+`5` a larger accent-coloured one, and `10` the largest, bolder with a warm
+glow. A chain with no rule of its own (after a retune) gets the base style.
+Each burst is one element with a single 1.5 s CSS animation (pop in, hold,
+fade up and out). The JS constant `BURST_MS` sets both the animation length,
+through `--burst-ms`, and the removal timer. The burst sits at `top: 34vh`,
+above the squirrel and below the end-of-run card. A new burst replaces one
+still on screen. Under `prefers-reduced-motion` it only fades.
+
+**Reasoning.** Attribute selectors keep the module a pure listener. The cost
+is that the CSS names today's thresholds, and a retune falls back to the
+plain style instead of breaking. One timer from one constant means the
+element cannot outlive its animation.
+
+## D-48 — Structures are pushed out to the drawn canopy's rim, not placed literally
+
+**Ambiguity.** LAN-524 draws `tree.structures` (D-40) at `position + offset`,
+but that offset was rolled against `canopyRadius` and `canopyDepth`, not
+against the canopy trees.js actually draws. Measured across the forest, most
+rolls land a median 2.5 m (up to ~5.5 m) inside the drawn foliage blob, so a
+literal placement is invisible from the air.
+
+**Decision.** `structures.js` keeps a structure's height, bearing and yaw
+exactly as worldgen rolled them, and pushes only the horizontal distance
+outward — never inward — to the surface of the ellipsoid trees.js actually
+draws for the main canopy blob (`CANOPY_DROP` and the vertical squash,
+exported from `trees.js` rather than copied). The great tree's canopy is four
+cones (`great-tree.js`), not that ellipsoid; its platform already measured
+close to a tier's surface, so it is placed literally.
+
+**Reasoning.** Reusing `trees.js`'s own numbers keeps this a rendering-only
+fix — worldgen, landing and catch radii are untouched, and the drey or
+platform a player sees now matches the canopy silhouette it is supposed to
+sit in.

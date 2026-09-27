@@ -354,3 +354,174 @@ kbd {
     transition: none;
   }
 }
+
+/* --- run hud ------------------------------------------------------------ */
+
+/* Top centre: the flight HUD owns the left and the tuning dials the right.
+   Dimmed between runs so it reads as "your best" rather than a live counter. */
+.run-hud {
+  position: absolute;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 1.25rem;
+  padding: 0.45rem 1.1rem;
+  border: 1px solid var(--paper-edge);
+  border-radius: 0.75rem;
+  background: var(--paper);
+  font-variant-numeric: tabular-nums;
+  opacity: 0.6;
+  transition: opacity 0.3s ease;
+}
+
+.run-hud--live {
+  opacity: 1;
+}
+
+.run-hud-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 3.5rem;
+}
+
+.run-hud-value {
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.run-hud-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+}
+
+/* The end-of-run card sits above the squirrel, not on it, and below the
+   landmark toast so the two can share the screen. */
+.run-end {
+  position: absolute;
+  top: 22vh;
+  left: 50%;
+  transform: translate(-50%, 0.75rem);
+  padding: 0.9rem 1.6rem;
+  border: 1px solid var(--paper-edge);
+  border-radius: 1rem;
+  background: var(--paper);
+  box-shadow: 0 1.25rem 2.5rem rgba(34, 48, 31, 0.18);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  opacity: 0;
+  transition: opacity 0.45s ease, transform 0.45s ease;
+}
+
+.run-end--visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.run-end-title {
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+  opacity: 0.6;
+}
+
+.run-end-score {
+  margin: 0.15rem 0;
+  font-size: 1.9rem;
+  font-weight: 700;
+}
+
+.run-end-verdict {
+  font-size: 0.95rem;
+}
+
+.run-end[data-beaten='true'] .run-end-verdict {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-hud,
+  .run-end {
+    transition: none;
+  }
+}
+
+/* --- milestone burst ---------------------------------------------------- */
+
+/* Above the squirrel and below the end-of-run card, so it never sits on the
+   glider. It pops in, holds, and fades in one animation whose length comes
+   from the module (--burst-ms), and is removed when it ends. Size carries the
+   size of the moment: 10 is louder than 5, 5 louder than 3 (D-46). */
+.milestone-burst {
+  position: absolute;
+  top: 34vh;
+  left: 50%;
+  padding: 0.35rem 1rem;
+  border: 1px solid var(--paper-edge);
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: 0 0.75rem 1.5rem rgba(34, 48, 31, 0.14);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translate(-50%, 0) scale(0.6);
+  animation: milestone-burst var(--burst-ms, 1500ms) ease-out forwards;
+}
+
+.milestone-burst[data-chain='5'] {
+  font-size: 1.45rem;
+  color: var(--accent);
+}
+
+.milestone-burst[data-chain='10'] {
+  padding: 0.5rem 1.4rem;
+  font-size: 1.9rem;
+  font-weight: 700;
+  color: var(--accent);
+  box-shadow: 0 1rem 2rem rgba(178, 112, 60, 0.28);
+}
+
+@keyframes milestone-burst {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.6);
+  }
+  18% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1.06);
+  }
+  28% {
+    transform: translate(-50%, 0) scale(1);
+  }
+  70% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -0.75rem) scale(1);
+  }
+}
+
+/* Same lifetime, no pop or drift: a plain fade in and out. */
+@keyframes milestone-burst-still {
+  0%,
+  100% {
+    opacity: 0;
+  }
+  15%,
+  70% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .milestone-burst {
+    transform: translate(-50%, 0);
+    animation-name: milestone-burst-still;
+  }
+}

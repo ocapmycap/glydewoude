@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { TREE_TYPES, WORLD_CONFIG } from '../src/constants.js';
+import { TREE_TYPES, WORLD_CONFIG, STRUCTURE_KINDS } from '../src/constants.js';
 import { distance2D } from '../src/math.js';
 import { generateForest, nearestTree } from '../src/worldgen.js';
 import { deriveGlideProfile, maxGlideRange } from '../src/glide.js';
@@ -103,6 +103,75 @@ describe('nearestTree', () => {
 
   it('returns null for an empty forest', () => {
     expect(nearestTree([], { x: 0, y: 0, z: 0 })).toBeNull();
+  });
+});
+
+describe('tree structures', () => {
+  it('gives identical structures for repeated calls with the same seed', () => {
+    expect(generateForest().trees.every((tree) => Array.isArray(tree.structures))).toBe(true);
+    expect(generateForest().trees.map((tree) => tree.structures)).toEqual(
+      generateForest().trees.map((tree) => tree.structures),
+    );
+    expect(generateForest({ seed: 'a' }).trees.map((tree) => tree.structures)).toEqual(
+      generateForest({ seed: 'a' }).trees.map((tree) => tree.structures),
+    );
+  });
+
+  it('gives different structures for a different seed', () => {
+    const a = generateForest({ seed: 'a' }).trees.map((tree) => tree.structures);
+    const b = generateForest({ seed: 'b' }).trees.map((tree) => tree.structures);
+    expect(a).not.toEqual(b);
+  });
+
+  it('gives every destination tree one or two structures of a known kind', () => {
+    const world = generateForest();
+    const knownKinds = new Set(Object.values(STRUCTURE_KINDS));
+    for (const tree of world.trees) {
+      if (!tree.isDestination) continue;
+      expect(tree.structures.length).toBeGreaterThanOrEqual(1);
+      expect(tree.structures.length).toBeLessThanOrEqual(2);
+      for (const structure of tree.structures) {
+        expect(knownKinds.has(structure.kind)).toBe(true);
+      }
+    }
+  });
+
+  it('gives every scenery tree no structures', () => {
+    const world = generateForest();
+    for (const tree of world.trees) {
+      if (!tree.isDestination) expect(tree.structures).toEqual([]);
+    }
+  });
+
+  it('places every structure inside or just under its tree\'s canopy, with a finite rotation', () => {
+    for (const seed of ['a', 'b', 'c', undefined]) {
+      const world = seed === undefined ? generateForest() : generateForest({ seed });
+      for (const tree of world.trees) {
+        for (const structure of tree.structures) {
+          expect(Math.hypot(structure.offset.x, structure.offset.z))
+            .toBeLessThanOrEqual(tree.canopyRadius);
+
+          const worldY = tree.position.y + structure.offset.y;
+          expect(worldY).toBeGreaterThanOrEqual(tree.perchY - tree.canopyDepth);
+          expect(worldY).toBeLessThanOrEqual(tree.perchY);
+
+          expect(Number.isFinite(structure.rotation)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it('gives the great tree a platform', () => {
+    const world = generateForest();
+    const great = world.trees.find((tree) => tree.id === 'tree-great');
+    expect(great.structures.some((s) => s.kind === STRUCTURE_KINDS.PLATFORM)).toBe(true);
+  });
+
+  it('uses both structure kinds somewhere in the default forest', () => {
+    const world = generateForest();
+    const kinds = new Set(world.trees.flatMap((tree) => tree.structures.map((s) => s.kind)));
+    expect(kinds.has(STRUCTURE_KINDS.DREY)).toBe(true);
+    expect(kinds.has(STRUCTURE_KINDS.PLATFORM)).toBe(true);
   });
 });
 

@@ -180,4 +180,9 @@ export const RUN_TUNING = Object.freeze({
   freshBonus: 1.5,
   /** Below this many landings it was not a run, and nothing banks it. */
   minChainToBank: 2,
+  /** Chain lengths worth a celebratory beat in the HUD, not a score bonus. */
+  milestoneChains: Object.freeze([3, 5, 10]),
 });
+
+/** Decorations worldgen tucks into destination canopies (LAN-520). Drawing only; landing ignores them. */
+export const STRUCTURE_KINDS = Object.freeze({ DREY: 'drey', PLATFORM: 'platform' });
