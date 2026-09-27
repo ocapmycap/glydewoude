@@ -131,7 +131,7 @@ export function createSimulation(options = {}) {
       return;
     }
 
-    glider = climbFrom ? climbFromGlider(glider, tree, climbFrom) : landOn(glider, tree);
+    glider = climbFrom ? climbFromGlider(glider, tree, climbFrom, profile) : landOn(glider, tree);
     emit({ type: 'glide:landed', tree, reason, glide: finished });
 
     // Catching bark extends the chain (and, on a milestone, celebrates it);

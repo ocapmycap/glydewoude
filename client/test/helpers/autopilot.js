@@ -20,11 +20,13 @@ function wrapAngle(angle) {
  * catching the tree at all — it only needs to arrive above the tree's
  * `minCatchY`. It does, though, aim for the *canopy* catch specifically
  * (arriving within `canopyDepth` of the perch) rather than the bare trunk
- * below it: since LAN-571 a trunk catch scampers up over several real
- * simulated seconds before reaching the perch, and the smoke/run-mode tests
- * that fly this pilot assert the hop resolves the instant it stops gliding.
- * `climb.test.js` exercises the trunk-catch climb directly, with its own
- * hand-built world.
+ * below it, so most hops climb briefly rather than scampering up a long
+ * stretch of bare trunk. Since LAN-571 (trunk catches) and LAN-579 (canopy
+ * catches) both climb to the perch over several real simulated seconds rather
+ * than landing on it instantly, the smoke/run-mode tests that fly this pilot
+ * keep stepping through `GliderPhase.CLIMBING` rather than stopping the
+ * moment the glide ends. `climb.test.js` exercises both climbs directly, with
+ * its own hand-built worlds.
  */
 export function chooseTarget(simulation) {
   const { motion } = simulation.glider;

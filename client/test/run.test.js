@@ -35,9 +35,15 @@ function flyOneHop(simulation, input, maxSeconds = 40) {
   let target = null;
   const maxTicks = Math.ceil(maxSeconds / FIXED_DT);
   for (let tick = 0; tick < maxTicks; tick += 1) {
-    if (simulation.glider.phase !== GliderPhase.GLIDING) break;
-    if (!target || tick % 30 === 0) target = chooseTarget(simulation) ?? target;
-    steerToward(input, simulation, target);
+    const phase = simulation.glider.phase;
+    // A canopy catch climbs to the perch rather than landing on it instantly
+    // (LAN-579), same as a trunk catch always has — keep stepping through
+    // that climb so the hop still resolves to PERCHED.
+    if (phase !== GliderPhase.GLIDING && phase !== GliderPhase.CLIMBING) break;
+    if (phase === GliderPhase.GLIDING) {
+      if (!target || tick % 30 === 0) target = chooseTarget(simulation) ?? target;
+      steerToward(input, simulation, target);
+    }
     simulation.step(input, FIXED_DT);
   }
 }

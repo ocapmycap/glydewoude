@@ -70,6 +70,13 @@ export const GLIDE_TUNING = Object.freeze({
 
   /** Speed scampering up a trunk after a climb-triggering catch (m/s). */
   climbSpeed: 8,
+  /**
+   * Shortest a climb may take (s), however close the catch already was to the
+   * perch. Without a floor a canopy catch a few centimetres below the perch
+   * would finish in a single tick — a teleport with extra math, not a climb
+   * (LAN-579).
+   */
+  minClimbDuration: 0.3,
 
   /** Turn rate spinning on the spot while perched (rad/s). */
   perchTurnRate: 2.5,

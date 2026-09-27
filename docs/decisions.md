@@ -1574,3 +1574,58 @@ hard-to-read direction with the one decision the player has to make: turn
 left or turn right. Keeping ordinary labels' fade preserves D-70's calm
 forest. The labels that matter for finding things, puzzle labels and the
 pointer, are always fully opaque and so always meet the 7:1 contrast.
+
+## D-82 — A canopy catch climbs too, from wherever it was caught
+
+**Ambiguity.** LAN-579 asks a canopy catch to climb to the perch like
+LAN-571's trunk catch, instead of teleporting there, reusing the same
+`climbSpeed` dial and a minimum climb time of about 0.3 s. It does not say
+where in the foliage the climb should start from, how a squirrel caught
+several metres out in the canopy should close the gap to the trunk without
+either standing still mid-air or blowing past `climbSpeed` on the last tick
+into the perch, or where the floor on climb duration should live.
+
+**Decision.** `resolveLanding` now returns `climbFrom` for every perch catch,
+trunk or canopy: a trunk catch keeps projecting onto the bark (LAN-571)
+unchanged, and a canopy catch's `climbFrom` is the catch point itself, still
+out in the foliage. `climbFrom` (`glider.js`) decides, once, at the start of
+the climb, where it is headed: a catch already at or inside
+`tree.trunkRadius` (every trunk catch, and every tree the unit tests build
+without a `trunkRadius` at all) targets its own x/z, unchanged — a plain
+vertical rise, bit-for-bit what LAN-571 already shipped. A catch farther out
+heads straight for the perch itself (the tree's centre line, at `perchY`) in
+one continuous straight line, rather than stopping partway at the bark first:
+stopping at the bark would still leave a `trunkRadius`-sized snap to the
+centre on the final tick, which for a catch metres out in the canopy would
+badly overshoot `climbSpeed`. Either way, `stepClimb` moves toward that fixed
+target at `glider.climbRate ?? profile.climbSpeed` and hands off to `perchOn`
+exactly as LAN-571 did once it arrives, so the final step is still the same
+bark-to-centre (or already-centred) hand-off, now always within one step's
+budget of where it actually is. Heading is recomputed each step to keep facing
+the trunk centre, guarded against the dead-centre case.
+
+A fixed `climbRate` is chosen once, in `climbFrom`, when a `profile` is
+passed (Phase 1's `doLand` always passes the live one): `climbRate =
+min(profile.climbSpeed, pathLength / profile.minClimbDuration)`, where
+`pathLength` is the straight-line distance from the catch point to the climb
+target above. Fixing it once, rather than recomputing a floor every step,
+means a single number bounds every step of a given climb, so the
+`climbSpeed × dt` bound tested end-to-end holds on every tick without special
+cases for the last one. `minClimbDuration` (0.3 s) lives in `GLIDE_TUNING` next to `climbSpeed` and
+flows through `deriveGlideProfile` the same way `climbSpeed` does, since
+nothing below the profile is allowed to read `GLIDE_TUNING` directly. Ground
+resets are untouched — they still teleport straight to `perched`, the
+soft-reset exception `landing.js` already documents.
+
+**Reasoning.** Deciding the target once avoids a subtle trap: recomputing
+"pull toward the bark" from the *current* position every tick can't tell "was
+always this close" apart from "has been climbing in for a while," and would
+either freeze early (leaving a large jump at the very end) or never truly
+reach the centre. Aiming for the centre directly once off the bark, instead
+of via a trunk-surface waypoint, is what lets the last step be an ordinary
+bounded one instead of a special-cased jump — the same hand-off LAN-571 always
+used, just reached from a point that is already (nearly) there. A fixed
+climbRate chosen at the catch, rather than a per-step recomputation, is what
+makes "no faster than climbSpeed, ever" and "at least minClimbDuration" both
+simple, provable properties of the whole climb rather than emergent behaviour
+that has to be checked tick by tick.

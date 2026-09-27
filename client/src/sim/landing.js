@@ -23,8 +23,8 @@ import { distance2D, nearestTree } from '@glidewood/shared';
  *
  * Either way the squirrel ends up on the perch at the top — squirrels climb,
  * so catching bark anywhere on the upper trunk means scampering up to the
- * launch branch. A canopy catch drops the squirrel there directly; a bare
- * trunk catch scampers up first, in view, before it's perched (LAN-571).
+ * launch branch. Both a canopy catch and a bare trunk catch scamper up first,
+ * in view, before they're perched (LAN-571, LAN-579).
  *
  * That one rule is what makes the loop sustainable. A glide only ever loses
  * altitude, so something has to give it back, and a tall trunk is it: aim low
@@ -120,11 +120,13 @@ export function resolveLanding(world, previous, next, fromTreeId = null) {
     }
     if (treeCatches(tree, next)) {
       // Below the canopy band is bare trunk, not the canopy blob — a climb up
-      // to the perch, not a drop straight onto it (LAN-571).
+      // the bark to the perch (LAN-571). A canopy catch also climbs rather
+      // than dropping straight onto the perch (LAN-579), but there is no bark
+      // to project onto yet, so it climbs from the catch point itself.
       if (next.y < tree.perchY - tree.canopyDepth) {
         return { tree, reason: 'perch', climbFrom: trunkSurfacePoint(tree, previous, next) };
       }
-      return { tree, reason: 'perch' };
+      return { tree, reason: 'perch', climbFrom: { x: next.x, y: next.y, z: next.z } };
     }
   }
   return null;

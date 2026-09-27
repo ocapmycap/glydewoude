@@ -79,12 +79,12 @@ describe('resolveLanding: a trunk catch adds climbFrom', () => {
     expect(distance2D(tree.position, landing.climbFrom)).toBeCloseTo(tree.trunkRadius, 5);
   });
 
-  it('does not add climbFrom for a canopy catch', () => {
+  it('adds climbFrom for a canopy catch too, equal to the catch point itself (LAN-579)', () => {
     const spot = at(tree.perchY - 0.5, tree.perchRadius - 0.5);
     const landing = resolveLanding(world, { ...spot, y: tree.perchY + 1 }, spot);
 
     expect(landing.reason).toBe('perch');
-    expect(landing.climbFrom).toBeUndefined();
+    expect(landing.climbFrom).toEqual({ x: spot.x, y: spot.y, z: spot.z });
   });
 });
 
@@ -168,6 +168,114 @@ describe('stepClimb (glider.js)', () => {
     const nearTop = { ...climbingGliderAt(tree.perchY - 0.01), glide };
     const climbed = stepClimb(nearTop, tree, profile, FIXED_DT);
     expect(climbed.glide).toEqual(glide);
+  });
+});
+
+describe('climbFrom with a profile: minimum climb duration (LAN-579)', () => {
+  const tree = { id: 'tree-climb', position: { x: 0, y: 0, z: 0 }, perchY: 20, trunkRadius: 1 };
+
+  function perchedGlider() {
+    return perchOn({ id: 'tree-perch', position: { x: 5, y: 0, z: 5 }, perchY: 12 });
+  }
+
+  it('sets a climbRate no faster than profile.climbSpeed', () => {
+    const profile = deriveGlideProfile(undefined, { ...GLIDE_TUNING, climbSpeed: 5, minClimbDuration: 0.3 });
+    // Already on the trunk surface, well below the perch: a long climb, so
+    // the minimum-duration clamp should not kick in at all.
+    const point = { x: tree.trunkRadius, y: 4, z: 0 };
+    const climbing = climbFrom(perchedGlider(), tree, point, profile);
+
+    expect(climbing.climbRate).toBeLessThanOrEqual(profile.climbSpeed);
+    expect(climbing.climbRate).toBeGreaterThan(0);
+  });
+
+  it('takes at least minClimbDuration to finish a very short climb', () => {
+    const profile = deriveGlideProfile(undefined, { ...GLIDE_TUNING, climbSpeed: 8, minClimbDuration: 0.3 });
+    // Already at the trunk surface, 0.1 m short of the perch — the shortest
+    // possible climb. Without the clamp this would reach the perch in a
+    // single 1/60s step, reading as a teleport rather than a climb.
+    const point = { x: tree.trunkRadius, y: tree.perchY - 0.1, z: 0 };
+    let glider = climbFrom(perchedGlider(), tree, point, profile);
+
+    let steps = 0;
+    const maxSteps = 200;
+    while (glider.phase !== GliderPhase.PERCHED && steps < maxSteps) {
+      glider = stepClimb(glider, tree, profile, FIXED_DT);
+      steps += 1;
+    }
+
+    expect(glider.phase).toBe(GliderPhase.PERCHED);
+    expect(steps).toBeGreaterThanOrEqual(Math.floor(profile.minClimbDuration / FIXED_DT));
+  });
+
+  it('does not change behaviour for the existing 3-argument call', () => {
+    const point = { x: tree.trunkRadius, y: 4, z: 0 };
+    const climbing = climbFrom(perchedGlider(), tree, point);
+    expect(climbing.climbRate).toBeUndefined();
+  });
+});
+
+describe('stepClimb moves in toward the trunk from an off-trunk catch point (LAN-579)', () => {
+  const tree = { id: 'tree-climb', position: { x: 0, y: 0, z: 0 }, perchY: 20, trunkRadius: 1.5 };
+  const profile = deriveGlideProfile(undefined, { ...GLIDE_TUNING, climbSpeed: 6 });
+
+  function startGlider() {
+    const perched = perchOn({ id: 'tree-perch', position: { x: 9, y: 0, z: 9 }, perchY: 5 });
+    // Off the trunk entirely — this is the foliage catch point a canopy
+    // catch now hands to climbFrom, not a point already on the bark.
+    return climbFrom(perched, tree, { x: 5, y: 8, z: 0 });
+  }
+
+  it('does not mutate the glider it is given', () => {
+    const glider = startGlider();
+    const snapshot = JSON.parse(JSON.stringify(glider));
+    stepClimb(glider, tree, profile, FIXED_DT);
+    expect(glider).toEqual(snapshot);
+  });
+
+  it('closes in on the trunk from the first step, rather than rising straight up', () => {
+    const glider = startGlider();
+    const stepped = stepClimb(glider, tree, profile, FIXED_DT);
+    expect(distance2D(tree.position, stepped.motion)).toBeLessThan(distance2D(tree.position, glider.motion));
+    expect(stepped.motion.y).toBeGreaterThan(glider.motion.y);
+  });
+
+  it('pulls the horizontal distance to the centre in toward the trunk, and rises, without ever moving faster than climbSpeed', () => {
+    let glider = startGlider();
+    let lastHorizontal = distance2D(tree.position, glider.motion);
+    let lastY = glider.motion.y;
+    const dt = 0.05;
+
+    let steps = 0;
+    const maxSteps = 200;
+    while (glider.phase !== GliderPhase.PERCHED && steps < maxSteps) {
+      const before = glider.motion;
+      glider = stepClimb(glider, tree, profile, dt);
+      steps += 1;
+
+      if (glider.phase === GliderPhase.PERCHED) break;
+
+      const horizontal = distance2D(tree.position, glider.motion);
+      // Once on the trunk, further steps hold the radius rather than pulling
+      // in further — only assert the approach while still farther out.
+      if (lastHorizontal > tree.trunkRadius + 1e-6) {
+        expect(horizontal).toBeLessThanOrEqual(lastHorizontal + 1e-9);
+      }
+      expect(glider.motion.y).toBeGreaterThanOrEqual(lastY);
+
+      const displacement = Math.hypot(
+        glider.motion.x - before.x,
+        glider.motion.y - before.y,
+        glider.motion.z - before.z,
+      );
+      expect(displacement).toBeLessThanOrEqual(profile.climbSpeed * dt + 1e-9);
+
+      lastHorizontal = horizontal;
+      lastY = glider.motion.y;
+    }
+
+    expect(steps).toBeLessThan(maxSteps);
+    expect(glider.phase).toBe(GliderPhase.PERCHED);
   });
 });
 
@@ -314,7 +422,7 @@ describe('climbing, end to end through the simulation', () => {
   });
 });
 
-describe('a canopy catch still goes straight to perched, not climbing', () => {
+describe('a canopy catch climbs to the perch instead of teleporting (LAN-579)', () => {
   const spawnTree = {
     id: 'tree-spawn-canopy',
     type: TREE_TYPES.LANDMARK,
@@ -365,26 +473,99 @@ describe('a canopy catch still goes straight to perched, not climbing', () => {
     };
   }
 
-  it('never passes through climbing on the way to perched', () => {
+  /** Launch and fly straight until something other than gliding happens. */
+  function flyIntoCanopy() {
     const simulation = createSimulation({ world: buildWorld(), caches: [] });
+    const events = [];
+    simulation.on((event) => events.push(event));
+
     const input = createInputState();
     input.launch = true;
     simulation.step(input, FIXED_DT);
     expect(simulation.glider.phase).toBe(GliderPhase.GLIDING);
 
     const maxTicks = Math.ceil(10 / FIXED_DT);
-    let sawClimbing = false;
     for (let tick = 0; tick < maxTicks; tick += 1) {
       simulation.step(input, FIXED_DT);
-      if (simulation.glider.phase === GliderPhase.CLIMBING) sawClimbing = true;
       if (simulation.glider.phase !== GliderPhase.GLIDING) break;
     }
 
-    expect(sawClimbing).toBe(false);
+    return { simulation, events, input };
+  }
+
+  it('enters climbing on the canopy tree, at a y within the canopy band, and fires glide:landed exactly once at the catch', () => {
+    const { simulation, events } = flyIntoCanopy();
+
+    expect(simulation.glider.phase).toBe(GliderPhase.CLIMBING);
+    expect(simulation.glider.treeId).toBe(canopyTree.id);
+    expect(simulation.glider.motion.y).toBeGreaterThanOrEqual(canopyTree.perchY - canopyTree.canopyDepth);
+    expect(simulation.glider.motion.y).toBeLessThanOrEqual(canopyTree.perchY);
+
+    const landedEvents = events.filter((event) => event.type === 'glide:landed');
+    expect(landedEvents).toHaveLength(1);
+    expect(landedEvents[0].reason).toBe('perch');
+    expect(landedEvents[0].tree.id).toBe(canopyTree.id);
+  });
+
+  it('climbs no faster than climbSpeed per step, takes at least minClimbDuration, and ends perched on the same tree with no further glide:landed events', () => {
+    const { simulation, events, input } = flyIntoCanopy();
+    expect(simulation.glider.phase).toBe(GliderPhase.CLIMBING); // precondition
+
+    let lastMotion = simulation.glider.motion;
+    let climbDuration = 0;
+    const maxTicks = Math.ceil(10 / FIXED_DT);
+    let tick = 0;
+    while (simulation.glider.phase === GliderPhase.CLIMBING && tick < maxTicks) {
+      simulation.step(input, FIXED_DT);
+      tick += 1;
+      climbDuration += FIXED_DT;
+
+      const motion = simulation.glider.motion;
+      const displacement = Math.hypot(motion.x - lastMotion.x, motion.y - lastMotion.y, motion.z - lastMotion.z);
+      expect(displacement).toBeLessThanOrEqual(simulation.profile.climbSpeed * FIXED_DT + 1e-9);
+      lastMotion = motion;
+    }
+
+    expect(tick).toBeLessThan(maxTicks);
     expect(simulation.glider.phase).toBe(GliderPhase.PERCHED);
     expect(simulation.glider.treeId).toBe(canopyTree.id);
-    // Caught up in the canopy band, not down on the bare trunk.
-    expect(simulation.glider.motion.y).toBeGreaterThanOrEqual(canopyTree.perchY - canopyTree.canopyDepth);
+    expect(climbDuration).toBeGreaterThanOrEqual(simulation.profile.minClimbDuration - FIXED_DT);
+
+    const landedEvents = events.filter((event) => event.type === 'glide:landed');
+    expect(landedEvents).toHaveLength(1);
+  });
+
+  it('lets the squirrel turn on the perch once the climb ends (LAN-577)', () => {
+    const { simulation, input } = flyIntoCanopy();
+    expect(simulation.glider.phase).toBe(GliderPhase.CLIMBING); // precondition
+
+    const maxTicks = Math.ceil(10 / FIXED_DT);
+    let tick = 0;
+    while (simulation.glider.phase === GliderPhase.CLIMBING && tick < maxTicks) {
+      simulation.step(input, FIXED_DT);
+      tick += 1;
+    }
+    expect(simulation.glider.phase).toBe(GliderPhase.PERCHED); // precondition
+
+    const headingBefore = simulation.glider.motion.heading;
+    input.steer = 1;
+    simulation.step(input, FIXED_DT);
+    expect(simulation.glider.motion.heading).not.toBe(headingBefore);
+  });
+
+  it('ignores launch held through the canopy climb until it finishes', () => {
+    const { simulation, input } = flyIntoCanopy();
+    expect(simulation.glider.phase).toBe(GliderPhase.CLIMBING); // precondition
+
+    const maxTicks = Math.ceil(10 / FIXED_DT);
+    let tick = 0;
+    while (simulation.glider.phase === GliderPhase.CLIMBING && tick < maxTicks) {
+      input.launch = true;
+      simulation.step(input, FIXED_DT);
+      tick += 1;
+    }
+    expect(tick).toBeLessThan(maxTicks);
+    expect(simulation.glider.phase).toBe(GliderPhase.PERCHED);
   });
 });
 
