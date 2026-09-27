@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateForest } from '@glidewood/shared';
+import { distance2D, generateForest } from '@glidewood/shared';
 
 import { resolveLanding, treeCatches } from '../src/sim/landing.js';
 
@@ -113,5 +113,104 @@ describe('towering trees (LAN-553)', () => {
     const landing = resolveLanding(groundWorld, { ...spot, y: 1 }, spot);
     expect(landing.reason).toBe('ground');
     expect(landing.tree.id).toBe(ordinaryTree.id);
+  });
+});
+
+describe('clinging (LAN-554)', () => {
+  // A separate hand-built pair, carrying the trunkHeight/trunkRadius fields
+  // the cling check needs, so the LAN-553 fixtures above stay untouched.
+  const clingTower = {
+    id: 'tree-cling-towering',
+    towering: true,
+    position: { x: 10, y: 0, z: 0 },
+    perchY: null,
+    minCatchY: 40,
+    catchRadius: 5,
+    trunkRadius: 2,
+    trunkHeight: 100,
+    perchRadius: 10,
+    canopyDepth: 25,
+  };
+  const clingOrdinary = {
+    id: 'tree-cling-ordinary',
+    towering: false,
+    position: { x: 50, y: 0, z: 0 },
+    perchY: 20,
+    minCatchY: 5,
+    catchRadius: 3,
+    perchRadius: 4,
+    canopyDepth: 6,
+  };
+  const clingWorld = {
+    config: { groundY: 0 },
+    trees: [clingOrdinary, clingTower],
+  };
+
+  it('catches a side hit on the near surface, at the height it hit', () => {
+    // Below minCatchY on purpose too — treeCatches would reject this height,
+    // but clinging to a towering trunk has no such floor.
+    const next = { x: clingTower.position.x + 3, y: 20, z: clingTower.position.z };
+    const previous = { x: clingTower.position.x + 6, y: 21, z: clingTower.position.z };
+
+    const landing = resolveLanding(clingWorld, previous, next);
+
+    expect(landing.reason).toBe('cling');
+    expect(landing.tree.id).toBe(clingTower.id);
+    expect(landing.point.y).toBe(next.y);
+
+    // The point sits exactly on the trunk surface (trunkRadius from centre)...
+    expect(distance2D(clingTower.position, landing.point)).toBeCloseTo(clingTower.trunkRadius, 5);
+
+    // ...on the same side the squirrel approached from: the direction from the
+    // trunk centre to the catch point matches the direction to `next`.
+    const toNext = {
+      x: next.x - clingTower.position.x,
+      z: next.z - clingTower.position.z,
+    };
+    const toPoint = {
+      x: landing.point.x - clingTower.position.x,
+      z: landing.point.z - clingTower.position.z,
+    };
+    const nextLength = Math.hypot(toNext.x, toNext.z);
+    const pointLength = Math.hypot(toPoint.x, toPoint.z);
+    expect(toPoint.x / pointLength).toBeCloseTo(toNext.x / nextLength, 5);
+    expect(toPoint.z / pointLength).toBeCloseTo(toNext.z / nextLength, 5);
+  });
+
+  it('still clings when the hit is below minCatchY', () => {
+    const next = { x: clingTower.position.x + 1, y: 5, z: clingTower.position.z };
+    expect(next.y).toBeLessThan(clingTower.minCatchY);
+
+    const landing = resolveLanding(clingWorld, { ...next, y: next.y + 1 }, next);
+
+    expect(landing.reason).toBe('cling');
+    expect(landing.tree.id).toBe(clingTower.id);
+  });
+
+  it('does not catch above the trunk top — that is canopy space, not trunk', () => {
+    const trunkTop = clingTower.position.y + clingTower.trunkHeight;
+    const next = { x: clingTower.position.x + 1, y: trunkTop + 10, z: clingTower.position.z };
+
+    expect(resolveLanding(clingWorld, { ...next, y: next.y + 1 }, next)).toBeNull();
+  });
+
+  it('skips the cling on the tower just launched from', () => {
+    const next = { x: clingTower.position.x + 1, y: 20, z: clingTower.position.z };
+    // Without the guard this would cling — confirm the geometry alone would
+    // have caught it before checking the guard suppresses it.
+    expect(resolveLanding(clingWorld, { ...next, y: 21 }, next)?.reason).toBe('cling');
+
+    expect(resolveLanding(clingWorld, { ...next, y: 21 }, next, clingTower.id)).toBeNull();
+  });
+
+  it('leaves an ordinary tree perching exactly as before', () => {
+    const spot = {
+      x: clingOrdinary.position.x,
+      y: clingOrdinary.perchY - 0.5,
+      z: clingOrdinary.position.z,
+    };
+    const landing = resolveLanding(clingWorld, { ...spot, y: spot.y + 1 }, spot);
+    expect(landing.reason).toBe('perch');
+    expect(landing.tree.id).toBe(clingOrdinary.id);
   });
 });

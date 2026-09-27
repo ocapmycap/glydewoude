@@ -24,7 +24,7 @@ import {
 
 import { createCollectionLedger } from './collection.js';
 import { createInteractionRegistry, landmarkInteraction } from './interactions.js';
-import { GliderPhase, landOn, launch, perchOn, stepAirborne } from './glider.js';
+import { GliderPhase, clingTo, landOn, launch, perchOn, stepAirborne } from './glider.js';
 import { resolveLanding } from './landing.js';
 import { createPuzzleTrial } from './puzzle.js';
 import { createRunTracker } from './run.js';
@@ -86,7 +86,8 @@ export function createSimulation(options = {}) {
   function doLaunch() {
     const from = treeById(glider.treeId);
     if (!from) return;
-    interactions.leave(from, context());
+    // A cling never fired `interactions.land`, so there is nothing to leave.
+    if (glider.phase !== GliderPhase.CLINGING) interactions.leave(from, context());
     glider = launch(glider, profile, tuning);
     emit({ type: 'glide:launched', tree: from });
     for (const puzzleEvent of puzzle.start(from)) emit(puzzleEvent);
@@ -97,8 +98,23 @@ export function createSimulation(options = {}) {
     if (started) emit(started);
   }
 
-  function doLand(tree, reason) {
+  function doLand(tree, reason, point) {
     const finished = glider.glide;
+
+    if (reason === 'cling') {
+      // Clinging to a towering trunk is a catch, not a landing: the chain
+      // keeps going and a puzzle in progress ends as a wrong-tree landing,
+      // but there is no perch here to announce or scamper up to, so the
+      // interaction registry and material collection sit this one out.
+      glider = clingTo(glider, tree, point);
+      emit({ type: 'glide:clung', tree, height: point.y });
+      for (const runEvent of runs.extend(tree, finished)) emit(runEvent);
+      for (const puzzleEvent of puzzle.land(tree, { reason, atTime: elapsed, glide: finished })) {
+        emit(puzzleEvent);
+      }
+      return;
+    }
+
     glider = landOn(glider, tree);
     emit({ type: 'glide:landed', tree, reason, glide: finished });
 
@@ -129,7 +145,8 @@ export function createSimulation(options = {}) {
     for (const puzzleEvent of puzzle.respawn()) emit(puzzleEvent);
 
     const from = treeById(glider.treeId);
-    if (from) interactions.leave(from, context());
+    // A cling never fired `interactions.land`, so there is nothing to leave.
+    if (from && glider.phase !== GliderPhase.CLINGING) interactions.leave(from, context());
     glider = perchOn(spawnTree);
     emit({ type: 'glide:respawned', tree: spawnTree });
     for (const puzzleEvent of puzzle.arm(spawnTree)) emit(puzzleEvent);
@@ -195,7 +212,9 @@ export function createSimulation(options = {}) {
         return;
       }
 
-      if (glider.phase === GliderPhase.PERCHED) {
+      // Launching can start from either a perch or a cling — neither is
+      // airborne, so both wait here for the launch input.
+      if (glider.phase === GliderPhase.PERCHED || glider.phase === GliderPhase.CLINGING) {
         if (input.launch) doLaunch();
         resetEdges(input);
         return;
@@ -207,16 +226,19 @@ export function createSimulation(options = {}) {
 
       // Once clear of the tree we launched from, allow landing on it again —
       // otherwise a loop back around to the same branch would fly straight
-      // through it.
+      // through it. Towering trees have no perch — `perchRadius` there is
+      // the unreachable canopy overhead, not the trunk — so use the cling's
+      // own catch radius instead.
       if (glider.fromTreeId) {
         const from = treeById(glider.fromTreeId);
-        if (from && distance2D(from.position, glider.motion) > from.perchRadius + 2) {
+        const clearRadius = from && (from.towering ? from.catchRadius : from.perchRadius) + 2;
+        if (from && distance2D(from.position, glider.motion) > clearRadius) {
           glider = { ...glider, fromTreeId: null };
         }
       }
 
       const landing = resolveLanding(world, previous, glider.motion, glider.fromTreeId);
-      if (landing) doLand(landing.tree, landing.reason);
+      if (landing) doLand(landing.tree, landing.reason, landing.point);
 
       resetEdges(input);
     },

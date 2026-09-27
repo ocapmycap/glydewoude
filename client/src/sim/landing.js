@@ -32,14 +32,48 @@ import { distance2D, nearestTree } from '@glidewood/shared';
  * keep the loop going.
  */
 export function treeCatches(tree, position) {
-  // Towering trees have no perch to climb to (clinging to the trunk is
-  // LAN-554). perchY is null on them, so this has to be explicit rather
-  // than relying on `position.y > null` coercing null to 0.
+  // Towering trees have no perch to climb to. perchY is null on them, so
+  // this has to be explicit rather than relying on `position.y > null`
+  // coercing null to 0. Flying into the trunk instead of past it is
+  // `clingPoint` below, checked separately by `resolveLanding`.
   if (tree.towering) return false;
   if (position.y > tree.perchY || position.y < tree.minCatchY) return false;
   const horizontal = distance2D(tree.position, position);
   const inCanopy = position.y >= tree.perchY - tree.canopyDepth;
   return horizontal <= (inCanopy ? tree.perchRadius : tree.catchRadius);
+}
+
+/**
+ * Where a towering trunk catches the squirrel, or null if this step missed
+ * it (LAN-554).
+ *
+ * A towering tree has no perch and so no climbable canopy volume — the whole
+ * trunk, from the ground up to its top, is bark a squirrel can grab, with no
+ * `minCatchY` floor the way an ordinary tree's side-catch has.
+ */
+function clingPoint(tree, previous, next) {
+  if (distance2D(tree.position, next) > tree.catchRadius) return null;
+  if (next.y > tree.position.y + tree.trunkHeight) return null;
+
+  // The point lands on the trunk surface, on the side the squirrel is
+  // coming from: straight out from the centre along the direction to
+  // `next`, falling back to the direction to `previous` and then +Z so a
+  // hit dead-centre on the trunk's axis never divides by zero.
+  let dx = next.x - tree.position.x;
+  let dz = next.z - tree.position.z;
+  if (dx === 0 && dz === 0) {
+    dx = previous.x - tree.position.x;
+    dz = previous.z - tree.position.z;
+  }
+  if (dx === 0 && dz === 0) {
+    dz = 1;
+  }
+  const length = Math.hypot(dx, dz);
+  return {
+    x: tree.position.x + (dx / length) * tree.trunkRadius,
+    y: next.y,
+    z: tree.position.z + (dz / length) * tree.trunkRadius,
+  };
 }
 
 /**
@@ -49,7 +83,7 @@ export function treeCatches(tree, position) {
  * several metres across, so a point test on the new position is sufficient —
  * there is nothing thin enough to tunnel through.
  *
- * @returns {{tree: object, reason: 'perch'|'ground'}|null}
+ * @returns {{tree: object, reason: 'perch'|'ground'}|{tree: object, reason: 'cling', point: {x: number, y: number, z: number}}|null}
  */
 export function resolveLanding(world, previous, next, fromTreeId = null) {
   if (next.y <= world.config.groundY) {
@@ -61,6 +95,16 @@ export function resolveLanding(world, previous, next, fromTreeId = null) {
   }
 
   for (const tree of world.trees) {
+    if (tree.towering) {
+      // Towering trunks are always skipped while they are the tree just
+      // launched from — unlike the ordinary-tree guard below there is no
+      // perch to put distance from, so there is nothing to measure.
+      if (tree.id === fromTreeId) continue;
+      const point = clingPoint(tree, previous, next);
+      if (point) return { tree, reason: 'cling', point };
+      continue;
+    }
+
     // Don't immediately re-catch the tree we just launched from.
     if (tree.id === fromTreeId && previous.y >= tree.minCatchY) {
       const horizontal = distance2D(tree.position, next);

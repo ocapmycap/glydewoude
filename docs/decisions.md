@@ -1090,3 +1090,85 @@ puzzle courses already use (LAN-546). It is the only way to leave every
 existing id, position and cache untouched. The outer half keeps them away from
 the spawn clearing. 130 m of separation spreads four trees around the rim, so
 they frame the forest instead of clustering.
+
+## D-65 — Cling geometry: anywhere on the trunk, and a new phase to hold it
+
+**Ambiguity.** LAN-553 left towering trees uncatchable — `treeCatches`
+explicitly returns `false` for them — with clinging deferred to LAN-554.
+Nothing said whether the trunk should keep the ordinary tree's `minCatchY`
+floor and canopy volume, or how the squirrel's state machine should represent
+"stuck to the side of a trunk" versus "standing on a perch".
+
+**Decision.** Clinging is a separate check, `clingPoint` in `landing.js`, not
+a branch of `treeCatches` — that function keeps returning `false` for
+towering trees exactly as D-63 left it, so LAN-553's test stays meaningful. A
+towering trunk catches anywhere from the ground to `tree.position.y +
+tree.trunkHeight`, with no `minCatchY` floor: there is no perch to require
+climbing further towards, so there is nothing for a floor to protect. The
+canopy above the trunk top is not a catch volume — flying over it just passes
+through open air above, same as any tree's crown. The catch point sits
+`trunkRadius` out from the centre, on the side the squirrel approached from
+(falling back to the direction from `previous`, then +Z, so a dead-centre hit
+never divides by zero), at the exact height of the hit. `resolveLanding`
+skips a towering tree outright while it is `fromTreeId` — unlike the
+distance-gated guard ordinary trees use, there is no perch radius to measure
+a towering tree's guard against.
+
+The squirrel gets a third `GliderPhase`, `CLINGING`, alongside `PERCHED` and
+`GLIDING`, rather than overloading `PERCHED` with a null perch height. A
+cling and a perch both mean "not airborne", but they hold different motion
+(a cling's `x/y/z` are the trunk-side point, not a branch) and, per D-66,
+different consequences when they end.
+
+**Reasoning.** Reusing `treeCatches`'s canopy/trunk split would have given
+towering trees a canopy volume they don't have and a floor that serves no
+purpose without a perch above it — "climbable anywhere on the visible bark"
+is the whole pitch of a giant tree you fly into. A dedicated phase keeps
+`sim/` code that branches on "is the squirrel free to launch" simple (both
+`PERCHED` and `CLINGING` qualify) without ever needing to ask whether a given
+perch is real.
+
+## D-66 — Cling in the loop: a catch, not a landing
+
+**Ambiguity.** `doLand` and `launch` assumed every arrival was onto a real
+perch: interactions fired, materials could be collected, and a launch always
+started from a branch already facing outward. A cling has none of those —
+there is no perch to announce to the interaction registry, no branch to push
+off from — but LAN-554 still needs it to feel like catching the run rather
+than losing it.
+
+**Decision.** `doLand` branches on `reason === 'cling'` before any of the
+perch bookkeeping: it calls `clingTo` instead of `landOn`, emits
+`glide:clung` with `{ tree, height }` instead of `glide:landed`, and still
+extends the run chain (`runs.extend`) and ends any puzzle trial in progress
+as a wrong-tree landing (`puzzle.land` already treats any non-ground,
+non-target tree that way). It does not call `interactions.land` or
+`collection.collectAt` — a trunk has no shop, no cache and nothing to
+announce. `launch` accepts `CLINGING` the same as `PERCHED`, but first turns
+the heading by π (wrapped into `(-π, π]`) so the push-off faces away from the
+trunk instead of into it, then hands off to the same `launchMotion` — same
+speed, same hop, no height gained or lost by clinging itself. `doLaunch` and
+`doRespawn` both skip `interactions.leave` when leaving a cling, since
+`interactions.land` never fired for it to balance. The `fromTreeId` guard
+that lets the squirrel loop back onto a tree it just left needed its own
+clause too: a towering tree has no `perchRadius` to measure against
+(`perchY` is `null`), so it clears at `catchRadius + 2` instead.
+
+One thing a cling does *not* do: save the server position anchor. `main.js`
+only calls `positionSync.save` on `glide:landed` and `glide:respawned`, so a
+cling's `glide:clung` is silently skipped. Checking `position-sync.js` and
+the server's plausibility check (`server/src/domain/validation.js`) confirms
+the anchor is not perch-specific — it is just the last position the server
+was told, used to bound how far a later `/collect` claim could plausibly be
+— so this is a gap worth naming rather than a broken assumption: a player who
+clings for a long time before their next perch reports a slightly stale
+anchor, the same as one who glides a long way without landing at all. Closing
+that gap, if it needs closing, is a `position-sync.js` change, not a `sim/`
+one.
+
+**Reasoning.** Treating a cling as a catch (extends the run) but not a
+landing (no interactions, no collection) matches what the player sees: they
+caught the tree and can push off again, but there was never a branch to
+arrive at. Reusing `launchMotion` rather than inventing a second launch path
+keeps the one place that owns "how fast does a push-off start" — no new
+tuning dial for a cling's hop.
