@@ -1233,3 +1233,30 @@ untouched. A side-on camera is the nearest framing to "looking past the
 squirrel" that is neither occluded by the trunk nor loses the squirrel
 off-screen. `CLINGING` in `follow-camera.js` is the dial to change after a
 playtest.
+
+## D-69 — Puzzle trees: a fall canopy and two pale beech bands
+
+**Ambiguity.** LAN-565 asked for puzzle trees to stand out from the air with
+"warm reds, oranges and ambers" and two light-tan trunk bands "on the
+lower-to-mid trunk", without fixing exact colours or heights. Puzzle trees
+are also destinations, which already get a gold canopy.
+
+**Decision.** In `trees.js`, a puzzle tree's canopy mixes `canopyAutumn`
+(`#C4472B`, a brick red) toward `canopyAutumnAlt` (`#E2782C`, orange) by one
+per-tree seeded draw. Its tufts lean 45% toward `canopyAutumnTuft` (`#EAA53C`,
+amber, lifted 10% toward the sky colour as green tufts are) instead of green. The canopy stays redder than `canopyDestination` so a
+puzzle tree never reads as an ordinary landmark. Two bands in `beechBand`
+(`#DCC6A2`, a touch lighter than the suggested `#D8C3A0` so the toon shadow
+band doesn't go muddy) sit at 40% and 70% of the bare trunk. The bare trunk is
+trunk height minus 1.7 canopy radii (the underside of the lowest blobs), with
+a floor of half the trunk height. Each band is 0.45 m tall and 6% wider than
+the trunk at that height, with the same seven facets and spin as the trunk and
+its own outline hull. That puts them at about 8 m and 14 m on Split Cedar.
+Bands are one extra InstancedMesh plus its hull, both skipped when a world has
+no puzzle trees.
+
+**Reasoning.** Placing bands against the bare trunk keeps them in view under
+the canopy on any tree height. Thin, flat and hugging the bark, they can't be
+mistaken for the round, free-floating flight rings from `rings.js`. Scenery,
+landmark and towering trees take the same colour paths and the same per-tree
+random draws as before, so they look unchanged.

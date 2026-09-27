@@ -27,7 +27,7 @@ import {
   RepeatWrapping,
   SRGBColorSpace,
 } from 'three';
-import { createRng, hashSeed, randRange } from '@glidewood/shared';
+import { TREE_TYPES, createRng, hashSeed, randRange } from '@glidewood/shared';
 
 import { PALETTE, mixColor, outlineMaterial, toonMaterial } from './materials.js';
 import { createGreatTree } from './great-tree.js';
@@ -65,6 +65,30 @@ const TUFTS_PER_TREE = 4;
 
 /** How far each canopy vertex may be pushed, as a fraction of its radius. */
 const CANOPY_JITTER = 0.18;
+
+/**
+ * Pale bands round a puzzle tree's trunk (D-69), placed as fractions of the
+ * bare trunk below the canopy so they stay on show from a glide approach
+ * however tall the tree. Thin and only just proud of the bark, so they never
+ * read as one of the flight rings from rings.js.
+ */
+const PUZZLE_BANDS = Object.freeze({
+  heights: Object.freeze([0.4, 0.7]),
+  /** Band height, metres. */
+  thickness: 0.45,
+  /** Band radius as a multiple of the trunk's radius at that height. */
+  proud: 1.06,
+  /**
+   * Where the lowest canopy blobs end, in canopy radii below the perch:
+   * CANOPY_DROP plus the lowest tuft's reach.
+   */
+  canopyUnderside: 1.7,
+  /** Floor on the bare trunk, as a fraction of trunk height. */
+  minBareFraction: 0.5,
+});
+
+/** The trunk cylinder's top radius over its bottom radius, as built below. */
+const TRUNK_TAPER = 0.75;
 
 /**
  * Per-tree randomness, seeded from the tree's id so every load draws the same
@@ -201,10 +225,11 @@ export function createForest(world) {
   const greatTree = world.trees.find((tree) => tree.id === world.spawnTreeId);
   const toweringTrees = world.trees.filter((tree) => tree.towering);
 
-  const trunkGeometry = new CylinderGeometry(0.75, 1, 1, 7, 1);
+  const trunkGeometry = new CylinderGeometry(TRUNK_TAPER, 1, 1, 7, 1);
   // Detail 0 keeps the canopy a faceted low-poly blob rather than a ball.
   const canopyGeometry = createCanopyGeometry();
 
+  const puzzleTrees = trees.filter((tree) => tree.type === TREE_TYPES.PUZZLE);
   const trunkCount = trees.length;
   const canopyCount = trees.length * (CANOPY_BLOBS.length + TUFTS_PER_TREE);
 
@@ -238,11 +263,18 @@ export function createForest(world) {
     trunks.setColorAt(treeIndex, mixColor(PALETTE.bark, PALETTE.barkGreat, randRange(rng, 0, 0.6)));
 
     // Destination gold only drifts a little toward green, so it still reads
-    // as "worth landing on" from the air.
-    const canopyColor = tree.isDestination
-      ? mixColor(PALETTE.canopyDestination, PALETTE.canopyAlt, randRange(rng, 0.05, 0.25))
-      : mixColor(PALETTE.canopy, PALETTE.canopyAlt, rng());
-    const tuftColor = canopyColor.clone().lerp(mixColor(PALETTE.canopyAlt, PALETTE.sky, 0.15), 0.3);
+    // as "worth landing on" from the air. Puzzle trees are destinations too,
+    // but take a fall canopy instead so they read as something to try.
+    const isPuzzle = tree.type === TREE_TYPES.PUZZLE;
+    let canopyColor;
+    if (isPuzzle) canopyColor = mixColor(PALETTE.canopyAutumn, PALETTE.canopyAutumnAlt, rng());
+    else if (tree.isDestination) {
+      canopyColor = mixColor(PALETTE.canopyDestination, PALETTE.canopyAlt, randRange(rng, 0.05, 0.25));
+    } else canopyColor = mixColor(PALETTE.canopy, PALETTE.canopyAlt, rng());
+    // Green tufts would muddy a fall canopy; amber ones break it up instead.
+    const tuftColor = isPuzzle
+      ? canopyColor.clone().lerp(mixColor(PALETTE.canopyAutumnTuft, PALETTE.sky, 0.1), 0.45)
+      : canopyColor.clone().lerp(mixColor(PALETTE.canopyAlt, PALETTE.sky, 0.15), 0.3);
 
     for (const blob of blobsFor(rng)) {
       const radius = tree.canopyRadius * blob.scale;
@@ -269,6 +301,40 @@ export function createForest(world) {
 
   // Outlines first so the solid geometry draws over their front faces.
   group.add(trunkOutlines, canopyOutlines, trunks, canopies);
+
+  if (puzzleTrees.length > 0) {
+    const bandCount = puzzleTrees.length * PUZZLE_BANDS.heights.length;
+    // Straight-sided: squashing the tapered trunk cylinder this thin would
+    // pull the band's top edge inside the bark.
+    const bandGeometry = new CylinderGeometry(1, 1, 1, 7, 1);
+    const bands = buildInstanced(bandGeometry, toonMaterial(PALETTE.beechBand), bandCount);
+    const bandOutlines = buildInstanced(bandGeometry, outlineMaterial(), bandCount);
+    let bandIndex = 0;
+    for (const tree of puzzleTrees) {
+      // A short tree with a wide canopy can have next to no bare trunk; the
+      // floor keeps its bands above the ground rather than below it.
+      const bareTrunk = Math.max(
+        tree.trunkHeight - PUZZLE_BANDS.canopyUnderside * tree.canopyRadius,
+        tree.trunkHeight * PUZZLE_BANDS.minBareFraction,
+      );
+      for (const fraction of PUZZLE_BANDS.heights) {
+        const height = bareTrunk * fraction;
+        const taper = 1 - (1 - TRUNK_TAPER) * (height / tree.trunkHeight);
+        const radius = tree.trunkRadius * taper * PUZZLE_BANDS.proud;
+        dummy.position.set(tree.position.x, tree.position.y + height, tree.position.z);
+        // Same spin as the trunk, so the band's facets sit on the trunk's.
+        dummy.rotation.set(0, tree.position.x * 0.7, 0);
+        dummy.scale.set(radius, PUZZLE_BANDS.thickness, radius);
+        dummy.updateMatrix();
+        bands.setMatrixAt(bandIndex, dummy.matrix);
+        bandOutlines.setMatrixAt(bandIndex, hull.multiplyMatrices(dummy.matrix, scaleUp));
+        bandIndex += 1;
+      }
+    }
+    bands.instanceMatrix.needsUpdate = true;
+    bandOutlines.instanceMatrix.needsUpdate = true;
+    group.add(bandOutlines, bands);
+  }
 
   if (greatTree) group.add(createGreatTree(greatTree, { barkTexture }));
   group.add(createToweringTrees(toweringTrees, { barkTexture, canopyGeometry }));

@@ -47,6 +47,15 @@ export const PALETTE = Object.freeze({
   // Wind streaks (wind.js): a near-white with a warm tint, so at low
   // opacity against the sky they read as moving air, not as rings.
   wind: 0xf7f4e6,
+  // Puzzle trees (trees.js): a fall canopy, red drifting to orange with amber
+  // tufts, so the few puzzle trees pick out of the green from a glide (D-69).
+  // Kept redder than canopyDestination so a puzzle tree never reads as an
+  // ordinary landmark's gold.
+  canopyAutumn: 0xc4472b,
+  canopyAutumnAlt: 0xe2782c,
+  canopyAutumnTuft: 0xeaa53c,
+  // Pale beech bands on a puzzle tree's trunk: light and warm, never grey.
+  beechBand: 0xdcc6a2,
 });
 
 /**
