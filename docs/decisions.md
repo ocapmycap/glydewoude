@@ -1506,3 +1506,71 @@ ambient density does not dip during a gust. Gust marks start off to the side
 because the follow camera sits about 9 m behind the squirrel (`follow-camera.js`).
 The sweep then passes beside the squirrel rather than through it, and the
 3 m fade covers any ambient mark that drifts into the lens.
+
+## D-80 — Puzzle beacons: two soft columns, pulsing on wall time, hidden only for the armed tree
+
+**Ambiguity.** LAN-578 asks for a tall, soft, gently pulsing column of warm
+light above each puzzle tree, drawn without fog and hidden while that tree's
+trial is armed. It leaves open the column's shape, how "soft" is achieved,
+where the column starts, and how the render side learns which trial is armed.
+
+**Decision.** `client/src/render/beacons.js` draws two nested open-ended
+cylinders per puzzle tree: a 3 m core and a 5.5 m shell, 60 m tall, starting
+3 m above the canopy top (`perchY`, or the trunk top for a tree without one).
+Both use `MeshBasicMaterial` with `fog: false`, additive blending, no depth
+write and `PALETTE.beacon` (appended). A four-component vertex colour fades
+alpha from 1 at the base to 0 at the top. The pulse is a 2 s sine on the
+absolute clock, moving opacity between 0.55 and 0.8 on the core and 0.25 and
+0.45 on the shell, so it never reaches zero or full and never flashes. It
+advances in `onBeforeRender`, like wind and the leaf burst. `main.js` hides a
+tree's beacon on `puzzle:armed` and shows all of them on `puzzle:solved`,
+`puzzle:failed` and `glide:respawned`, the same events that drive the rings.
+It also hides the spawn tree's beacon at startup if the simulation armed a
+trial before any listener existed. All dials are in the frozen `BEACON`
+table.
+
+**Reasoning.** Additive blending makes the beacon read as brightness rather
+than as a colour, so it carries meaning without relying on hue, and
+overlapping beacons only ever get brighter. Only two or three puzzle trees
+exist, so a few plain meshes are cheaper to reason about than an instanced
+pool. Driving the pulse from wall time means a hidden beacon needs no state
+to resume.
+
+## D-81 — Legible labels and the off-screen puzzle pointer
+
+**Ambiguity.** LAN-578 asks for labels of at least 28 px, bold, at 7:1
+contrast with a minimum on-screen size, for puzzle labels that skip the
+cutoff, and for an edge-of-screen pointer to the nearest puzzle tree. It does
+not say how size varies with distance, whether ordinary labels keep their
+fade, what "nearest" is measured from, how a target behind the camera is
+shown, or what the pointer does during a trial.
+
+**Decision.**
+- One frozen `LEGIBLE_TEXT` table in `client/src/ui/legibility.js` holds the
+  size floor (28 px), the ceiling (44 px), the weight (700) and the plate and
+  text colours (`#22301f` on `#fff8ec`, about 14:1). A test computes the WCAG
+  ratio from the table itself. The JS sets these as `--legible-*` custom
+  properties, so `style.css` has no copy of its own.
+- Label size is 44 px within 20 m of the camera, easing linearly to 28 px by
+  the 130 m cutoff and staying at 28 px beyond it (`labelFontPx`).
+- Ordinary labels keep D-70's fade and cutoff. Puzzle labels ignore both:
+  they are fully opaque whenever they are in front of the camera. They read
+  "Puzzle · <name>" and have a thick light border, so they differ by text and
+  shape, not colour.
+- The pointer (`client/src/ui/puzzle-pointer.js`) targets the puzzle tree
+  with the smallest horizontal distance from the squirrel and shows that
+  distance, rounded to the metre. It sits where the ray from the screen
+  centre crosses a rectangle inset 72 px from the edge. A target behind the
+  camera is pinned to the left or right edge, pointing sideways, so the arrow
+  always says which way to turn. The pointer hides when the target's label
+  anchor is on screen, when the squirrel is within 15 m of the target, and
+  while any trial is armed, so it never pulls the player away from a course
+  in progress. It runs every frame whatever the `N` toggle says.
+
+**Reasoning.** Horizontal distance from the squirrel matches how the player
+steers, and it is the number they will see shrink as they fly toward the tree.
+Pinning behind-camera targets to a side edge replaces a mirrored,
+hard-to-read direction with the one decision the player has to make: turn
+left or turn right. Keeping ordinary labels' fade preserves D-70's calm
+forest. The labels that matter for finding things, puzzle labels and the
+pointer, are always fully opaque and so always meet the 7:1 contrast.

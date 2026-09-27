@@ -6,7 +6,16 @@
  * DOM. The pure half is what client/test/tree-labels.test.js exercises; it
  * takes no DOM and no Three.js, so it runs headlessly like the rest of sim/
  * even though this file lives in ui/ (D-70).
+ *
+ * LAN-578 adds low-vision legibility on top: a font size that grows as the
+ * camera closes in (`labelFontPx`, floored and ceilinged by LEGIBLE_TEXT) and
+ * an exception for puzzle trees, whose tag is worth reading from much further
+ * off than an ordinary landmark's, so it skips the distance cutoff entirely.
  */
+
+import { TREE_TYPES } from '@glidewood/shared';
+
+import { LEGIBLE_TEXT } from './legibility.js';
 
 /**
  * Distance fade for labels, in metres from the camera: full opacity out to
@@ -18,13 +27,50 @@
  *
  * On the default seed, named trees other than the great tree sit 71-119 m
  * out and the puzzle tree (Split Cedar) at 148 m; the fade starts well short
- * of that band and the cutoff sits just past it, so Split Cedar's tag only
- * appears once you have actually glided close enough to read it (D-70).
+ * of that band and the cutoff sits just past it, so an ordinary landmark's
+ * tag only appears once you have actually glided close enough to read it
+ * (D-70). Split Cedar is the exception: `treeLabelState` lets a puzzle tree's
+ * tag ignore the cutoff below, since knowing where the trial is well before
+ * you arrive matters more than keeping the forest calm (LAN-578).
+ *
+ * `sizeReferenceDistance` is the separate distance band `labelFontPx` uses:
+ * at or inside it a label draws at LEGIBLE_TEXT's ceiling, easing down to its
+ * floor by `cutoffDistance` so a label is never too small to read even as it
+ * fades.
  */
 export const TREE_LABEL_VIEW = Object.freeze({
   fadeStartDistance: 60,
   cutoffDistance: 130,
+  sizeReferenceDistance: 20,
 });
+
+/** Puzzle tree tags read "Puzzle · <name>" so the trial stands out from an ordinary landmark's. */
+export const PUZZLE_LABEL_PREFIX = 'Puzzle · ';
+
+/** True only for a puzzle-course tree (shared/src/constants.js TREE_TYPES). */
+export function isPuzzleTree(tree) {
+  return tree.type === TREE_TYPES.PUZZLE;
+}
+
+/** The text a label actually shows: a puzzle tree's name gets prefixed. */
+export function labelText(tree) {
+  return isPuzzleTree(tree) ? PUZZLE_LABEL_PREFIX + tree.name : tree.name;
+}
+
+/**
+ * Font size in CSS pixels for a label at `distance` metres from the camera:
+ * LEGIBLE_TEXT's ceiling at or inside `sizeReferenceDistance`, easing down to
+ * its floor by `cutoffDistance` and never smaller after that — a label that
+ * has faded to invisible is hidden outright by `treeLabelState`, not shrunk.
+ */
+export function labelFontPx(distance) {
+  const { sizeReferenceDistance, cutoffDistance } = TREE_LABEL_VIEW;
+  const { minFontPx, maxFontPx } = LEGIBLE_TEXT;
+  if (distance <= sizeReferenceDistance) return maxFontPx;
+  if (distance >= cutoffDistance) return minFontPx;
+  const t = (distance - sizeReferenceDistance) / (cutoffDistance - sizeReferenceDistance);
+  return maxFontPx - t * (maxFontPx - minFontPx);
+}
 
 /**
  * How far a label's world anchor clears the tree's drawn canopy top, in
@@ -58,12 +104,25 @@ export function labelOpacity(distance) {
  * needs to draw: a screen position, whether to show the tag at all, and how
  * transparent it is. Points behind the camera or past the cutoff are hidden
  * outright rather than merely faded to 0, so an off-screen tag can never
- * catch a stray click even if pointer-events were ever re-enabled.
+ * catch a stray click even if pointer-events were ever re-enabled. A puzzle
+ * tree is the one exception to the cutoff (LAN-578): it stays fully visible
+ * at any distance so long as it is in front of the camera, since the trial
+ * is worth knowing about from further off than an ordinary landmark's name.
  *
  * @param {{id: string, name: string}} tree
  * @param {{x: number, y: number, distance: number, behind: boolean}} projected
  */
 export function treeLabelState(tree, projected) {
+  if (isPuzzleTree(tree)) {
+    return {
+      id: tree.id,
+      name: tree.name,
+      x: projected.x,
+      y: projected.y,
+      visible: !projected.behind,
+      opacity: projected.behind ? 0 : 1,
+    };
+  }
   const visible = !projected.behind && projected.distance < TREE_LABEL_VIEW.cutoffDistance;
   return {
     id: tree.id,
@@ -115,6 +174,12 @@ export function labelAnchor(tree) {
 export function createTreeLabels(root) {
   const container = document.createElement('div');
   container.className = 'tree-labels tree-labels--hidden';
+  // LEGIBLE_TEXT is the single source of truth for plate/text colour and
+  // weight; style.css reads these custom properties rather than hard-coding
+  // its own copy, so the two can never drift apart.
+  container.style.setProperty('--legible-plate', LEGIBLE_TEXT.plateColour);
+  container.style.setProperty('--legible-text', LEGIBLE_TEXT.textColour);
+  container.style.setProperty('--legible-weight', String(LEGIBLE_TEXT.fontWeight));
   root.appendChild(container);
 
   const elements = new Map();
@@ -128,7 +193,7 @@ export function createTreeLabels(root) {
       container.appendChild(el);
       elements.set(label.id, el);
     }
-    if (el.textContent !== label.name) el.textContent = label.name;
+    if (el.textContent !== label.text) el.textContent = label.text;
     return el;
   }
 
@@ -144,7 +209,11 @@ export function createTreeLabels(root) {
     },
 
     /**
-     * @param {Array<{id: string, name: string, x: number, y: number, visible: boolean, opacity: number}>} labels
+     * @param {Array<{
+     *   id: string, text: string, x: number, y: number, visible: boolean,
+     *   opacity: number, fontPx: number, puzzle: boolean,
+     * }>} labels  `treeLabelState` plus the display text, font size and
+     *   puzzle flag the caller derives from the tree (see main.js)
      */
     update(labels) {
       const seen = new Set();
@@ -154,7 +223,12 @@ export function createTreeLabels(root) {
         el.style.left = `${label.x}px`;
         el.style.top = `${label.y}px`;
         el.style.opacity = String(label.opacity);
+        el.style.fontSize = `${label.fontPx}px`;
         el.classList.toggle('tree-label--hidden', !label.visible);
+        // A puzzle label is thicker-bordered rather than differently
+        // coloured, so the distinction survives a colour-blind or
+        // low-contrast display (shape and size carry meaning too).
+        el.classList.toggle('tree-label--puzzle', Boolean(label.puzzle));
       }
       // A label whose tree fell out of this frame's list (never happens with
       // a static forest today, but the caller's contract does not promise

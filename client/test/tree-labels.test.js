@@ -17,6 +17,19 @@ import {
   treeLabelState,
 } from '../src/ui/tree-labels.js';
 
+// LAN-578 additions: low-vision legibility for the label text (font-size
+// floor/ceiling) and letting a puzzle tree's tag stay visible past the
+// ordinary distance cutoff, imported separately so the block above (LAN-567)
+// is untouched.
+import {
+  PUZZLE_LABEL_PREFIX,
+  isPuzzleTree,
+  labelFontPx,
+  labelText,
+} from '../src/ui/tree-labels.js';
+import { LEGIBLE_TEXT } from '../src/ui/legibility.js';
+import { TREE_TYPES } from '@glidewood/shared';
+
 describe('TREE_LABEL_VIEW', () => {
   it('is frozen and starts the fade before the cutoff', () => {
     expect(Object.isFrozen(TREE_LABEL_VIEW)).toBe(true);
@@ -163,5 +176,95 @@ describe('labelAnchor', () => {
     const before = JSON.parse(JSON.stringify(splitCedar));
     labelAnchor(splitCedar);
     expect(splitCedar).toEqual(before);
+  });
+});
+
+// --- LAN-578: low-vision legibility additions below ---
+
+describe('isPuzzleTree', () => {
+  it('is true only for a tree of the puzzle type', () => {
+    expect(isPuzzleTree({ type: TREE_TYPES.PUZZLE })).toBe(true);
+    expect(isPuzzleTree({ type: TREE_TYPES.SCENERY })).toBe(false);
+    expect(isPuzzleTree({ type: TREE_TYPES.LANDMARK })).toBe(false);
+  });
+
+  it('finds a real puzzle tree in the default forest', () => {
+    const { trees } = generateForest();
+    const splitCedar = trees.find((tree) => tree.name === 'Split Cedar');
+    expect(splitCedar).toBeTruthy();
+    expect(isPuzzleTree(splitCedar)).toBe(true);
+  });
+});
+
+describe('labelText', () => {
+  it('prefixes a puzzle tree name with the puzzle label prefix', () => {
+    const tree = { name: 'Split Cedar', type: TREE_TYPES.PUZZLE };
+    expect(labelText(tree)).toBe(PUZZLE_LABEL_PREFIX + 'Split Cedar');
+    expect(labelText(tree)).toBe('Puzzle · Split Cedar');
+  });
+
+  it('leaves a non-puzzle tree name unprefixed', () => {
+    const tree = { name: 'Old Oak', type: TREE_TYPES.SCENERY };
+    expect(labelText(tree)).toBe('Old Oak');
+  });
+});
+
+describe('labelFontPx', () => {
+  it('never drops below the legibility floor, even very far away', () => {
+    expect(labelFontPx(1e6)).toBeGreaterThanOrEqual(LEGIBLE_TEXT.minFontPx);
+    expect(labelFontPx(TREE_LABEL_VIEW.cutoffDistance * 10)).toBeGreaterThanOrEqual(LEGIBLE_TEXT.minFontPx);
+  });
+
+  it('equals the floor once far enough away', () => {
+    expect(labelFontPx(1e6)).toBe(LEGIBLE_TEXT.minFontPx);
+  });
+
+  it('equals the ceiling at or inside the size reference distance', () => {
+    expect(labelFontPx(TREE_LABEL_VIEW.sizeReferenceDistance)).toBe(LEGIBLE_TEXT.maxFontPx);
+    expect(labelFontPx(TREE_LABEL_VIEW.sizeReferenceDistance / 2)).toBe(LEGIBLE_TEXT.maxFontPx);
+    expect(labelFontPx(0)).toBe(LEGIBLE_TEXT.maxFontPx);
+  });
+
+  it('never exceeds the legibility ceiling', () => {
+    const distances = [0, 1, 10, TREE_LABEL_VIEW.sizeReferenceDistance, 1000];
+    for (const distance of distances) {
+      expect(labelFontPx(distance)).toBeLessThanOrEqual(LEGIBLE_TEXT.maxFontPx);
+    }
+  });
+
+  it('is non-increasing as distance grows', () => {
+    const distances = Array.from({ length: 20 }, (_, i) => (i * TREE_LABEL_VIEW.cutoffDistance) / 4);
+    const sizes = distances.map((distance) => labelFontPx(distance));
+    for (let i = 1; i < sizes.length; i += 1) {
+      expect(sizes[i]).toBeLessThanOrEqual(sizes[i - 1]);
+    }
+  });
+});
+
+describe('treeLabelState for a puzzle tree', () => {
+  const puzzleTree = { id: 'tree-puzzle', name: 'Split Cedar', type: TREE_TYPES.PUZZLE };
+  const sceneryTree = { id: 'tree-scenery', name: 'Old Oak', type: TREE_TYPES.SCENERY };
+
+  it('stays visible with full opacity well past the ordinary cutoff distance', () => {
+    const farProjected = {
+      x: 10, y: 10, distance: TREE_LABEL_VIEW.cutoffDistance * 5, behind: false,
+    };
+    const state = treeLabelState(puzzleTree, farProjected);
+    expect(state.visible).toBe(true);
+    expect(state.opacity).toBe(1);
+  });
+
+  it('still hides a puzzle tree behind the camera', () => {
+    const behindProjected = { x: 10, y: 10, distance: 5, behind: true };
+    const state = treeLabelState(puzzleTree, behindProjected);
+    expect(state.visible).toBe(false);
+  });
+
+  it('a scenery tree at the same far distance stays hidden, unlike the puzzle tree', () => {
+    const farProjected = {
+      x: 10, y: 10, distance: TREE_LABEL_VIEW.cutoffDistance * 5, behind: false,
+    };
+    const state = treeLabelState(sceneryTree, farProjected);
+    expect(state.visible).toBe(false);
   });
 });

@@ -27,7 +27,13 @@ import { createMilestoneBurst } from './ui/milestone-burst.js';
 import { createRings } from './render/rings.js';
 import { createWind } from './render/wind.js';
 import { createPuzzlePrompt } from './ui/puzzle-prompt.js';
-import { createTreeLabels, labelAnchor, labelledTrees, treeLabelState } from './ui/tree-labels.js';
+import {
+  createTreeLabels, isPuzzleTree, labelAnchor, labelFontPx, labelText, labelledTrees, treeLabelState,
+} from './ui/tree-labels.js';
+import { createBeacons } from './render/beacons.js';
+import {
+  PUZZLE_POINTER, createPuzzlePointer, edgePointer, nearestPuzzleTree, pointerText,
+} from './ui/puzzle-pointer.js';
 
 import './style.css';
 
@@ -94,6 +100,17 @@ const labelledWorldTrees = labelledTrees(world.trees).map((tree) => (
   { tree, anchor: labelAnchor(tree) }
 ));
 
+// Puzzle trees never change after worldgen either, so the off-screen pointer
+// (LAN-578) filters once here rather than every render frame.
+const puzzleTrees = world.trees.filter(isPuzzleTree);
+const puzzlePointer = createPuzzlePointer(overlay);
+// True between 'puzzle:armed' and the trial's end, so the pointer and the
+// beacon agree on when a trial is in play. A trial can already be armed on
+// the spawn tree before any listener exists (createPuzzleTrial arms it in
+// createSimulation), so this starts from the simulation's own state rather
+// than assuming nothing is armed yet.
+let trialArmed = simulation.puzzle.trial != null;
+
 const bindings = createInputBindings(input, canvas, {
   onToggleTuning: () => tuning.toggle(),
   onToggleShop: () => shop.toggle(),
@@ -127,9 +144,37 @@ const loop = createLoop({
     // Skip the projection work entirely while hidden — most frames, since
     // labels are off by default.
     if (treeLabels.shown) {
-      treeLabels.update(labelledWorldTrees.map(({ tree, anchor }) => (
-        treeLabelState(tree, renderer.projectToScreen(anchor))
-      )));
+      treeLabels.update(labelledWorldTrees.map(({ tree, anchor }) => {
+        const projected = renderer.projectToScreen(anchor);
+        return {
+          ...treeLabelState(tree, projected),
+          text: labelText(tree),
+          fontPx: labelFontPx(projected.distance),
+          puzzle: isPuzzleTree(tree),
+        };
+      }));
+    }
+
+    // The off-screen puzzle pointer runs whether or not labels are toggled
+    // on (LAN-578) — unlike a label, it only ever appears when there is
+    // somewhere off screen worth pointing at.
+    const nearest = nearestPuzzleTree(puzzleTrees, simulation.glider.motion);
+    if (!nearest || trialArmed || nearest.distance < PUZZLE_POINTER.arriveDistance) {
+      puzzlePointer.hide();
+    } else {
+      const projected = renderer.projectToScreen(labelAnchor(nearest.tree));
+      const edge = edgePointer(projected, { width: overlay.clientWidth, height: overlay.clientHeight });
+      if (edge.onScreen) {
+        puzzlePointer.hide();
+      } else {
+        puzzlePointer.update({
+          visible: true,
+          x: edge.x,
+          y: edge.y,
+          angle: edge.angle,
+          text: pointerText(nearest.tree.name, nearest.distance),
+        });
+      }
     }
   },
 });
@@ -149,10 +194,24 @@ createMilestoneBurst(overlay, simulation);
 // A respawn while armed but not yet launched clears the trial without a
 // puzzle event, so it hides the rings too; any re-arm follows it.
 const rings = createRings(renderer.scene, world);
+// The beacon above a puzzle tree (LAN-578) hides while that tree's own trial
+// is armed, so it never sits lit up in the middle of the rings it just
+// vacated for. The spawn tree's trial can be armed before this listener
+// exists (see `trialArmed` above), so its beacon starts hidden too.
+const beacons = createBeacons(renderer.scene, world);
+if (simulation.puzzle.trial) beacons.hide(simulation.puzzle.trial.treeId);
 simulation.on((event) => {
-  if (event.type === 'puzzle:armed') rings.show(event.tree.id);
-  else if (event.type === 'puzzle:ring') rings.pass(event.index);
-  else if (['puzzle:solved', 'puzzle:failed', 'glide:respawned'].includes(event.type)) rings.hide();
+  if (event.type === 'puzzle:armed') {
+    rings.show(event.tree.id);
+    beacons.hide(event.tree.id);
+    trialArmed = true;
+  } else if (event.type === 'puzzle:ring') {
+    rings.pass(event.index);
+  } else if (['puzzle:solved', 'puzzle:failed', 'glide:respawned'].includes(event.type)) {
+    rings.hide();
+    beacons.showAll();
+    trialArmed = false;
+  }
 });
 createPuzzlePrompt(overlay, simulation);
 

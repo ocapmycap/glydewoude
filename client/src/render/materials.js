@@ -56,6 +56,10 @@ export const PALETTE = Object.freeze({
   canopyAutumnTuft: 0xeaa53c,
   // Pale beech bands on a puzzle tree's trunk: light and warm, never grey.
   beechBand: 0xdcc6a2,
+  // Puzzle tree beacons (beacons.js): a warm glow, distinct from the cooler
+  // gold of ringNext, so a beacon reads as "look here" and a ring as "fly
+  // through here".
+  beacon: 0xffd27a,
 });
 
 /**

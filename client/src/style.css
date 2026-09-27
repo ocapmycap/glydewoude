@@ -166,27 +166,36 @@ kbd {
   display: none;
 }
 
-/* Positioned in JS via left/top (screen pixels from renderer.projectToScreen);
-   this only fixes the pill to float above that point. Pill shape and paper
-   colours match the toast so a label reads as part of the same HUD language
-   against either sky or canopy. */
+/* Positioned in JS via left/top (screen pixels from renderer.projectToScreen)
+   and font-size (screen distance, see labelFontPx). A solid opaque plate
+   rather than the paper/text-shadow look everything else uses — low-vision
+   legibility (LAN-578) wants a guaranteed contrast ratio, which a translucent
+   paper background sitting over an unpredictable sky or canopy cannot
+   promise. --legible-* custom properties come from legibility.js via
+   tree-labels.js, so this file never hard-codes its own copy of the colours. */
 .tree-label {
   position: absolute;
   transform: translate(-50%, -100%);
   margin-top: -0.35rem;
-  padding: 0.2rem 0.65rem;
+  padding: 0.25rem 0.75rem;
   border-radius: 999px;
-  background: var(--paper);
-  border: 1px solid var(--paper-edge);
-  font-size: 0.75rem;
-  letter-spacing: 0.04em;
+  background: var(--legible-plate);
+  color: var(--legible-text);
+  font-weight: var(--legible-weight);
+  letter-spacing: 0.02em;
   white-space: nowrap;
-  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.6);
-  box-shadow: 0 0.15rem 0.4rem rgba(34, 48, 31, 0.25);
+  box-shadow: 0 0.15rem 0.4rem rgba(34, 48, 31, 0.35);
 }
 
 .tree-label--hidden {
   display: none;
+}
+
+/* A puzzle tree's tag is thicker-bordered rather than differently coloured,
+   so the distinction between "ordinary landmark" and "puzzle trial" survives
+   even if colour alone cannot be told apart. */
+.tree-label--puzzle {
+  border: 0.2rem solid var(--legible-text);
 }
 
 /* --- tuning panel ------------------------------------------------------- */
@@ -617,4 +626,50 @@ kbd {
   100% {
     opacity: 0;
   }
+}
+
+/* --- off-screen puzzle pointer ------------------------------------------ */
+
+/* Whether the nearest puzzle tree is behind the camera or just off the edge
+   of the frame, this points at it from wherever it is pinned on screen
+   (see edgePointer in ui/puzzle-pointer.js). Shown whether or not the N-key
+   labels are on (LAN-578), so it covers full-screen like tree-labels does. */
+.puzzle-pointer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.puzzle-pointer--hidden {
+  display: none;
+}
+
+/* A solid triangle via clip-path, with a dark stroke faked from four offset
+   drop-shadows rather than an actual border (a clipped shape's border does
+   not follow the clip). Rotation and position are set inline in JS every
+   frame; the size comes from --arrow-size (PUZZLE_POINTER.arrowSizePx). */
+.puzzle-pointer-arrow {
+  position: absolute;
+  width: var(--arrow-size);
+  height: var(--arrow-size);
+  background: var(--legible-text);
+  clip-path: polygon(0% 8%, 78% 50%, 0% 92%);
+  filter:
+    drop-shadow(0.09rem 0 0 var(--legible-plate))
+    drop-shadow(-0.09rem 0 0 var(--legible-plate))
+    drop-shadow(0 0.09rem 0 var(--legible-plate))
+    drop-shadow(0 -0.09rem 0 var(--legible-plate));
+}
+
+/* Same solid plate as a tree label, and the same LEGIBLE_TEXT minimum size —
+   the pointer's name-and-distance line has to read as fast as the arrow. */
+.puzzle-pointer-text {
+  position: absolute;
+  padding: 0.4rem 0.9rem;
+  border-radius: 0.6rem;
+  background: var(--legible-plate);
+  color: var(--legible-text);
+  font-weight: var(--legible-weight);
+  white-space: nowrap;
+  box-shadow: 0 0.2rem 0.5rem rgba(34, 48, 31, 0.35);
 }
