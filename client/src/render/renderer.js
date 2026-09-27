@@ -16,6 +16,7 @@ import {
   MathUtils,
   PerspectiveCamera,
   Scene,
+  Vector3,
   WebGLRenderer,
 } from 'three';
 
@@ -57,6 +58,12 @@ export function createRenderer(canvas, world) {
 
   const squirrel = createSquirrel();
   scene.add(squirrel.object);
+
+  // Reused across every projectToScreen call (LAN-567) — a per-tree label
+  // projection every frame is exactly the kind of allocation that shows up
+  // in a profiler if it is not scratch.
+  const projectionScratch = new Vector3();
+  const viewSpaceScratch = new Vector3();
 
   function resize() {
     const width = canvas.clientWidth || window.innerWidth;
@@ -103,6 +110,34 @@ export function createRenderer(canvas, world) {
 
       followCamera.update(motion, glider.phase, dt);
       renderer.render(scene, camera);
+    },
+
+    /**
+     * Turn a world point into a screen point, for DOM overlays like the
+     * tree name labels (LAN-567). Only render/ touches the camera's
+     * matrices; ui/ hands us a point and gets pixels back. Call this after
+     * `render()` in the same frame so the camera's matrices are current.
+     *
+     * @param {{x: number, y: number, z: number}} point
+     * @returns {{x: number, y: number, distance: number, behind: boolean}}
+     *   x/y in CSS pixels relative to the canvas; distance in metres from
+     *   the camera; behind is true once the point is behind the camera.
+     */
+    projectToScreen(point) {
+      // View space: the camera looks down -Z, so a point in front has a
+      // negative z there. Checked separately from the NDC projection below
+      // because dividing by a negative w near the camera plane can flip the
+      // sign of a purely NDC-based check.
+      viewSpaceScratch.set(point.x, point.y, point.z).applyMatrix4(camera.matrixWorldInverse);
+      const behind = viewSpaceScratch.z >= 0;
+
+      projectionScratch.set(point.x, point.y, point.z).project(camera);
+      const width = canvas.clientWidth || window.innerWidth;
+      const height = canvas.clientHeight || window.innerHeight;
+      const x = (projectionScratch.x * 0.5 + 0.5) * width;
+      const y = (1 - (projectionScratch.y * 0.5 + 0.5)) * height;
+
+      return { x, y, distance: camera.position.distanceTo(point), behind };
     },
 
     dispose() {

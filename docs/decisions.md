@@ -1261,6 +1261,42 @@ mistaken for the round, free-floating flight rings from `rings.js`. Scenery,
 landmark and towering trees take the same colour paths and the same per-tree
 random draws as before, so they look unchanged.
 
+## D-70 — Tree name labels: DOM tags, 60 m fade to a 130 m cutoff
+
+**Ambiguity.** LAN-567 asked for a floating name tag over every named tree,
+toggled off by default with the N key, fading with distance and hidden past
+a cutoff and behind the camera, without fixing the fade band, the cutoff, or
+whether a label is DOM or a sprite.
+
+**Decision.** Labels are plain DOM, one `.tree-label` pill per named tree,
+positioned each frame from `renderer.projectToScreen(anchor)` and styled to
+match the existing toast (paper background, pill radius, letter-spacing),
+with a text and box shadow added so it stays readable over both sky and
+canopy. `TREE_LABEL_VIEW` in `client/src/ui/tree-labels.js` — the only module
+that reads it — fades a label from full opacity at `fadeStartDistance` (60 m)
+to invisible at `cutoffDistance` (130 m). On the default seed, ordinary named
+trees sit 71–119 m from the great tree, so their labels are already fading in
+gently by the time they're readable; Split Cedar, the puzzle tree, sits at
+148 m, past the cutoff, so its tag only appears once you've actually glided
+towards it. A label is hidden outright, not just faded to 0, once its world
+anchor is behind the camera (checked in view space, before the perspective
+divide, so it can't flip sign right at the camera plane) or past the cutoff.
+The N key toggles visibility; it starts off so the forest stays calm (product
+doc §2.1). No gamepad button: the only free one (X, button 2) is not wired,
+because adding it would change `mapGamepad`'s and `heldButtons`'s return
+shape, which existing gamepad tests pin with `toEqual`.
+
+**Reasoning.** DOM text is crisp at any zoom with no font atlas to bake and
+no extra draw call, and it reuses the toast's styling for free. Building each
+label's element once and only repositioning it after avoids per-frame DOM
+churn. The fade numbers come from where the current forest actually places
+its named trees, so the effect is visible without a screenshot: labels ease
+in over the approach to an ordinary destination, and a distant puzzle tree
+stays a surprise. The pure fade/anchor math lives in `ui/tree-labels.js`
+rather than `render/`, because that is its only consumer and it keeps the
+curve unit-testable without pulling in Three.js, the same boundary the rest
+of `sim/` and `shared/` are held to.
+
 ## D-71 — Easing into the cling view over about 1.3 s
 
 **Ambiguity.** LAN-570 asked for the swing into the side-on cling view

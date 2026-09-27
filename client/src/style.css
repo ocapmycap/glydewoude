@@ -151,6 +151,44 @@ kbd {
   transform: translate(-50%, 0);
 }
 
+/* --- tree name labels ---------------------------------------------------- */
+
+/* Off by default (LAN-567) — display:none rather than opacity so a hidden
+   label can never be nudged into showing by a stray style change elsewhere. */
+.tree-labels {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tree-labels--hidden {
+  display: none;
+}
+
+/* Positioned in JS via left/top (screen pixels from renderer.projectToScreen);
+   this only fixes the pill to float above that point. Pill shape and paper
+   colours match the toast so a label reads as part of the same HUD language
+   against either sky or canopy. */
+.tree-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  margin-top: -0.35rem;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  background: var(--paper);
+  border: 1px solid var(--paper-edge);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0.15rem 0.4rem rgba(34, 48, 31, 0.25);
+}
+
+.tree-label--hidden {
+  display: none;
+}
+
 /* --- tuning panel ------------------------------------------------------- */
 
 .tuning {

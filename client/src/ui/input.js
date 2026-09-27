@@ -11,6 +11,7 @@
  *   mouse (after clicking)  steer and pitch, via pointer lock
  *   space                   launch
  *   R                       return to the great tree
+ *   N                       toggle floating names above named trees
  *   gamepad left stick      steer / pitch (forward = dive)
  *   gamepad A               launch
  *   gamepad Y               toggle shop
@@ -26,7 +27,7 @@ const MOUSE_SENSITIVITY = 0.0075;
 /** How fast mouse steering recentres when the hand stops moving (1/s). */
 const MOUSE_DECAY = 3.5;
 
-export function createInputBindings(input, canvas, { onToggleTuning, onToggleShop } = {}) {
+export function createInputBindings(input, canvas, { onToggleTuning, onToggleShop, onToggleLabels } = {}) {
   const held = new Set();
   let mouseSteer = 0;
   let mousePitch = 0;
@@ -43,6 +44,7 @@ export function createInputBindings(input, canvas, { onToggleTuning, onToggleSho
     if (event.code === 'KeyR') input.respawn = true;
     if (event.code === 'KeyT') onToggleTuning?.();
     if (event.code === 'KeyB') onToggleShop?.();
+    if (event.code === 'KeyN') onToggleLabels?.();
     if (event.code === 'Escape' && pointerLocked) document.exitPointerLock();
     held.add(event.code);
   }

@@ -27,6 +27,7 @@ import { createMilestoneBurst } from './ui/milestone-burst.js';
 import { createRings } from './render/rings.js';
 import { createWind } from './render/wind.js';
 import { createPuzzlePrompt } from './ui/puzzle-prompt.js';
+import { createTreeLabels, labelAnchor, labelledTrees, treeLabelState } from './ui/tree-labels.js';
 
 import './style.css';
 
@@ -85,9 +86,18 @@ const hud = createHud(overlay, simulation);
 const tuning = createTuningPanel(overlay, simulation);
 const shop = createShop(overlay, { session, simulation });
 createRunHud(overlay, { simulation, runSync });
+
+// Named trees and their world anchors never change after worldgen, so this
+// is computed once rather than every frame the labels are shown.
+const treeLabels = createTreeLabels(overlay);
+const labelledWorldTrees = labelledTrees(world.trees).map((tree) => (
+  { tree, anchor: labelAnchor(tree) }
+));
+
 const bindings = createInputBindings(input, canvas, {
   onToggleTuning: () => tuning.toggle(),
   onToggleShop: () => shop.toggle(),
+  onToggleLabels: () => treeLabels.toggle(),
 });
 
 // The opening hint stays up until the player takes their first launch.
@@ -113,6 +123,14 @@ const loop = createLoop({
     // as the camera's delta keeps the chase cam smooth on high-refresh
     // displays without the simulation itself ever running at a variable rate.
     renderer.render(simulation.glider, (1 / 60) * (1 + alpha));
+
+    // Skip the projection work entirely while hidden — most frames, since
+    // labels are off by default.
+    if (treeLabels.shown) {
+      treeLabels.update(labelledWorldTrees.map(({ tree, anchor }) => (
+        treeLabelState(tree, renderer.projectToScreen(anchor))
+      )));
+    }
   },
 });
 
