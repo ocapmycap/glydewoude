@@ -10,9 +10,10 @@
  * Pure — imports nothing from the client and touches no Three.js.
  */
 
-import { TREE_TYPES, WORLD_CONFIG, STRUCTURE_KINDS } from './constants.js';
+import { TREE_TYPES, WORLD_CONFIG, STRUCTURE_KINDS, PUZZLE_CONFIG } from './constants.js';
 import { createRng, hashSeed, randRange, randPick } from './rng.js';
 import { distance2D } from './math.js';
+import { deriveGlideProfile, maxGlideRange } from './glide.js';
 
 /**
  * @typedef {object} Tree
@@ -32,6 +33,8 @@ import { distance2D } from './math.js';
  * @property {Array<{kind:string, offset:{x:number,y:number,z:number}, rotation:number}>} structures
  *   Decorative dreys/platforms tucked into the canopy, relative to `position`.
  *   Drawing only — nothing in landing or glide reads this.
+ * @property {?{targetTreeId:string, rings:Array<{center:{x:number,y:number,z:number}, normal:{x:number,y:number,z:number}, radius:number}>}} course
+ *   Set only on TREE_TYPES.PUZZLE trees; null everywhere else.
  */
 
 const LANDMARK_NAMES = [
@@ -66,6 +69,7 @@ function makeTree(id, spec, config) {
     catchRadius: spec.trunkRadius + config.catchMargin,
     minCatchY: spec.position.y + spec.trunkHeight * config.minCatchHeightFraction,
     structures: [],
+    course: null,
   };
 }
 
@@ -140,6 +144,159 @@ function scatterPositions(rng, config) {
   return placed;
 }
 
+/** The point a glide actually launches from and lands on: the trunk position at perch height. */
+function perchPoint(tree) {
+  return { x: tree.position.x, y: tree.perchY, z: tree.position.z };
+}
+
+/** Unit vector from `from` to `to`, in full 3D — used as a ring's facing. */
+function directionBetween(from, to) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dz = to.z - from.z;
+  const length = Math.hypot(dx, dy, dz);
+  return { x: dx / length, y: dy / length, z: dz / length };
+}
+
+/**
+ * Sample the straight line between two perch points at ~1 m steps and check
+ * none of them fall inside another tree's catch volume, so a course never
+ * sends a pilot straight through foliage that would catch them mid-flight.
+ *
+ * Mirrors `treeCatches` in client/src/sim/landing.js — shared cannot import
+ * client code, so the catch-volume geometry is reproduced here. Keep the two
+ * in step if landing's catch rule ever changes. The horizontal radius is
+ * inflated by the ring radius so the ring itself clears the foliage too, not
+ * just the flight line through its centre.
+ */
+function pathIsClear(from, to, trees, ignoreIds) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dz = to.z - from.z;
+  const length = Math.hypot(dx, dy, dz);
+  const steps = Math.max(PUZZLE_CONFIG.ringCount + 1, Math.ceil(length));
+
+  for (let i = 0; i <= steps; i += 1) {
+    const t = i / steps;
+    const point = { x: from.x + dx * t, y: from.y + dy * t, z: from.z + dz * t };
+
+    for (const tree of trees) {
+      if (ignoreIds.has(tree.id)) continue;
+      if (point.y > tree.perchY || point.y < tree.minCatchY) continue;
+      const horizontal = distance2D(tree.position, point);
+      const inCanopy = point.y >= tree.perchY - tree.canopyDepth;
+      const radius = (inCanopy ? tree.perchRadius : tree.catchRadius) + PUZZLE_CONFIG.ringRadius;
+      if (horizontal <= radius) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Trees `candidate` could send a puzzle course to: lower, in range of a
+ * base-stat glide with slack (PUZZLE_CONFIG.reachMargin), far enough away for
+ * rings to have room, never the great tree, the candidate itself, or a tree
+ * already chosen as a puzzle (a course must not end on another puzzle), and
+ * with a straight path that does not fly through another tree's canopy.
+ */
+function validTargets(candidate, trees, excludedIds, profile) {
+  const from = perchPoint(candidate);
+  return trees.filter((target) => {
+    if (target.id === 'tree-great') return false;
+    if (target.id === candidate.id) return false;
+    if (excludedIds.has(target.id)) return false;
+    if (target.perchY >= candidate.perchY) return false;
+
+    const horizontalGap = distance2D(candidate.position, target.position);
+    if (horizontalGap < PUZZLE_CONFIG.minTargetDistance) return false;
+
+    const reach = PUZZLE_CONFIG.reachMargin
+      * maxGlideRange(candidate.perchY - target.perchY, profile);
+    if (horizontalGap > reach) return false;
+
+    // The launch guard covers the puzzle tree itself, and arriving at the
+    // target is the point of the course, so both ends are exempt from their
+    // own catch volumes when checking the path between them.
+    return pathIsClear(from, perchPoint(target), trees, new Set([candidate.id, target.id]));
+  });
+}
+
+/**
+ * Lay out a course's rings evenly along the straight line between the two
+ * perch points, each one lower than the last, all facing the target. No
+ * lateral jitter — a pilot has to be able to fly this on a line.
+ */
+function buildCourse(puzzleTree, target) {
+  const from = perchPoint(puzzleTree);
+  const to = perchPoint(target);
+  const normal = directionBetween(from, to);
+
+  const rings = [];
+  for (let i = 1; i <= PUZZLE_CONFIG.ringCount; i += 1) {
+    const t = i / (PUZZLE_CONFIG.ringCount + 1);
+    rings.push({
+      center: {
+        x: from.x + (to.x - from.x) * t,
+        y: from.y + (to.y - from.y) * t,
+        z: from.z + (to.z - from.z) * t,
+      },
+      // Own copy per ring so nothing downstream can mutate one ring's normal
+      // and silently affect the others.
+      normal: { ...normal },
+      radius: PUZZLE_CONFIG.ringRadius,
+    });
+  }
+  return { targetTreeId: target.id, rings };
+}
+
+/**
+ * Turn a handful of destination trees into puzzle trees, each with a ring
+ * course down to a reachable, lower tree.
+ *
+ * Runs on its own rng stream, salted like `generateMaterialCaches` does
+ * ((seed ^ PUZZLE_CONFIG.seedSalt) >>> 0), and only after every tree's
+ * position, height and structures are settled — drawing from the main
+ * worldgen stream here would shift every roll that follows and change the
+ * whole forest layout every time puzzle selection was retuned.
+ */
+function placePuzzleCourses(trees, seed) {
+  const rng = createRng((seed ^ PUZZLE_CONFIG.seedSalt) >>> 0);
+  const profile = deriveGlideProfile();
+
+  const targetIdByPuzzleId = new Map();
+  let remaining = trees.filter((tree) => tree.isDestination && tree.id !== 'tree-great');
+
+  for (let i = 0; i < PUZZLE_CONFIG.treeCount; i += 1) {
+    const chosenIds = new Set(targetIdByPuzzleId.keys());
+    const viable = remaining.filter(
+      (candidate) => validTargets(candidate, trees, chosenIds, profile).length > 0,
+    );
+    if (viable.length === 0) break;
+
+    const puzzleTree = randPick(rng, viable);
+    const targets = validTargets(puzzleTree, trees, chosenIds, profile);
+    const target = randPick(rng, targets);
+
+    targetIdByPuzzleId.set(puzzleTree.id, target.id);
+    // A target already spoken for cannot later become a puzzle tree itself —
+    // otherwise a course could end on another puzzle after all.
+    remaining = remaining.filter(
+      (candidate) => candidate.id !== puzzleTree.id && candidate.id !== target.id,
+    );
+  }
+
+  const treesById = new Map(trees.map((tree) => [tree.id, tree]));
+  return trees.map((tree) => {
+    const targetId = targetIdByPuzzleId.get(tree.id);
+    if (targetId === undefined) return { ...tree, course: null };
+    return {
+      ...tree,
+      type: TREE_TYPES.PUZZLE,
+      course: buildCourse(tree, treesById.get(targetId)),
+    };
+  });
+}
+
 /**
  * Build the forest.
  *
@@ -206,11 +363,15 @@ export function generateForest(overrides = {}) {
     structures: placeStructures(rng, tree),
   }));
 
+  // Puzzle course selection is a separate pass on a separately salted rng —
+  // see placePuzzleCourses for why it cannot share the stream above.
+  const finalTrees = placePuzzleCourses(treesWithStructures, seed);
+
   return {
     seed,
     seedLabel: String(config.seed),
     config,
-    trees: treesWithStructures,
+    trees: finalTrees,
     spawnTreeId: 'tree-great',
     bounds: { radius: config.areaRadius },
   };

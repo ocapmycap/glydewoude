@@ -186,3 +186,31 @@ export const RUN_TUNING = Object.freeze({
 
 /** Decorations worldgen tucks into destination canopies (LAN-520). Drawing only; landing ignores them. */
 export const STRUCTURE_KINDS = Object.freeze({ DREY: 'drey', PLATFORM: 'platform' });
+
+/**
+ * Puzzle tree course dials (LAN-546).
+ *
+ * Kept apart from GLIDE_TUNING the same way BASE_GLIDE_STATS is: these
+ * numbers decide which trees get a course and how tight it is, never how the
+ * squirrel actually flies. worldgen consults them when choosing puzzle trees
+ * and shaping their rings; nothing in glide.js or the sim's step functions
+ * reads them.
+ */
+export const PUZZLE_CONFIG = Object.freeze({
+  /** How many destination trees become puzzle trees. */
+  treeCount: 3,
+  /** Rings per course. */
+  ringCount: 3,
+  /** Ring radius, metres. */
+  ringRadius: 2.5,
+  /**
+   * Fraction of a base-stat glide's max range a target may actually use.
+   * Leaves slack for the launch and any turning, so a course picked as
+   * "reachable" still is once a real pilot — not a straight line — flies it.
+   */
+  reachMargin: 0.8,
+  /** Minimum horizontal gap between a puzzle tree and its target, metres, so the rings between them have room to breathe. */
+  minTargetDistance: 30,
+  /** Seed offset, so puzzle selection does not disturb the main worldgen stream. */
+  seedSalt: 0x51ed270b,
+});

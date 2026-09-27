@@ -815,3 +815,49 @@ close to a tier's surface, so it is placed literally.
 fix — worldgen, landing and catch radii are untouched, and the drey or
 platform a player sees now matches the canopy silhouette it is supposed to
 sit in.
+
+## D-49 — Puzzle targets are measured from the drop to the target's perch, with slack and a clear line
+
+**Ambiguity.** LAN-546 asks for a target "reachable in one glide at base
+stats" using `maxGlideRange` "from the puzzle tree's perch height", and for
+rings "between the puzzle tree and the target". Measuring range from the perch
+height above the *ground* would accept targets you can only reach by arriving
+below their catch volumes. It also leaves open where between the trees the
+rings go, and whether anything may stand in the way.
+
+**Decision.** A target must perch lower than the puzzle tree, sit at least
+`PUZZLE_CONFIG.minTargetDistance` (30 m) away horizontally, and be within
+`reachMargin` (0.8) × `maxGlideRange(puzzle.perchY − target.perchY)` at
+`BASE_GLIDE_STATS`. The great tree, other puzzle trees and other targets are
+never targets or puzzles. The 3 rings sit at ¼, ½ and ¾ of the straight line
+from the puzzle perch point to the target perch point, so they descend by
+construction, and every ring's `normal` is that line's unit direction. A
+target is rejected if that line, sampled every ~1 m, enters another tree's
+catch volume inflated by the ring radius (`pathIsClear`, mirroring
+`treeCatches` in `client/src/sim/landing.js`). Selection runs after the
+structures pass on its own stream, `(seed ^ PUZZLE_CONFIG.seedSalt) >>> 0`.
+
+**Reasoning.** Measuring from the drop is the stricter reading, so it satisfies
+the looser one too. The margin leaves room for the launch and small
+corrections. The line is steeper than a best-ratio glide, so a pilot can
+always lose height to meet it. A course blocked by a canopy would catch the
+squirrel mid-trial and could never be solved. The clearance check copies the
+landing geometry because `shared/` cannot import `client/`; if
+`treeCatches` changes, `pathIsClear` must change with it.
+
+## D-50 — Puzzle trees stop announcing their name until LAN-548 registers them
+
+**Ambiguity.** Turning a landmark into `TREE_TYPES.PUZZLE` moves it out of
+reach of the `landmark` interaction, so landing on it no longer emits
+`landmark:arrived`. Registering `landmarkInteraction` for `PUZZLE` now would
+fix that, but `client/test/interactions.test.js` ("does not register economy
+interactions") asserts that `PUZZLE` is *not* registered.
+
+**Decision.** Leave `createSimulation` alone in LAN-546. The 2–3 puzzle trees
+land silently until LAN-548, which the issue already tasks with registering a
+`PUZZLE` interaction that reuses `landmarkInteraction`. That ticket will have
+to update the existing assertion deliberately.
+
+**Reasoning.** An existing test's expectations are not changed to make a new
+change pass. Losing a name popup on three trees for one ticket costs little,
+and LAN-548 already owns this wiring.
