@@ -24,7 +24,16 @@ import {
 
 import { createCollectionLedger } from './collection.js';
 import { createInteractionRegistry, landmarkInteraction } from './interactions.js';
-import { GliderPhase, clingTo, landOn, launch, perchOn, stepAirborne } from './glider.js';
+import {
+  GliderPhase,
+  clingTo,
+  climbFrom as climbFromGlider,
+  landOn,
+  launch,
+  perchOn,
+  stepAirborne,
+  stepClimb,
+} from './glider.js';
 import { resolveLanding } from './landing.js';
 import { createPuzzleTrial } from './puzzle.js';
 import { createRunTracker } from './run.js';
@@ -98,7 +107,7 @@ export function createSimulation(options = {}) {
     if (started) emit(started);
   }
 
-  function doLand(tree, reason, point) {
+  function doLand(tree, reason, point, climbFrom) {
     const finished = glider.glide;
 
     if (reason === 'cling') {
@@ -115,7 +124,7 @@ export function createSimulation(options = {}) {
       return;
     }
 
-    glider = landOn(glider, tree);
+    glider = climbFrom ? climbFromGlider(glider, tree, climbFrom) : landOn(glider, tree);
     emit({ type: 'glide:landed', tree, reason, glide: finished });
 
     // Catching bark extends the chain (and, on a milestone, celebrates it);
@@ -220,6 +229,14 @@ export function createSimulation(options = {}) {
         return;
       }
 
+      // Climbing is scripted, not flown — launch input is ignored and does
+      // not queue for the moment it becomes perched (LAN-571).
+      if (glider.phase === GliderPhase.CLIMBING) {
+        glider = stepClimb(glider, treeById(glider.treeId), profile, dt);
+        resetEdges(input);
+        return;
+      }
+
       const { glider: moved, previous } = stepAirborne(glider, input, profile, dt, tuning);
       glider = moved;
       for (const puzzleEvent of puzzle.step(previous, glider.motion)) emit(puzzleEvent);
@@ -238,7 +255,7 @@ export function createSimulation(options = {}) {
       }
 
       const landing = resolveLanding(world, previous, glider.motion, glider.fromTreeId);
-      if (landing) doLand(landing.tree, landing.reason, landing.point);
+      if (landing) doLand(landing.tree, landing.reason, landing.point, landing.climbFrom);
 
       resetEdges(input);
     },

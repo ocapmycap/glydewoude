@@ -21,6 +21,7 @@ const DIALS = [
   { key: 'glideEfficiencyFalloff', label: 'off-cruise penalty', min: 0, max: 1.5, step: 0.05 },
   { key: 'gravity', label: 'gravity', min: 6, max: 40, step: 0.5 },
   { key: 'launchHop', label: 'launch hop', min: 0, max: 8, step: 0.2 },
+  { key: 'climbSpeed', label: 'climb speed', min: 1, max: 24, step: 0.5 },
 ];
 
 export function createTuningPanel(root, simulation) {

@@ -93,10 +93,16 @@ export function createRenderer(canvas, world) {
       const { motion } = glider;
       const gliding = glider.phase === 'gliding';
       // A cling's position is a point on the bark, not a branch to stand
-      // on, so it skips the perch's lift and lets the pose meet the trunk.
+      // on, so it skips the perch's lift and lets the pose meet the trunk. A
+      // trunk climb (LAN-571) is the same pose scampering up the same bark.
       const clinging = glider.phase === 'clinging';
+      const climbing = glider.phase === 'climbing';
 
-      squirrel.object.position.set(motion.x, motion.y + (gliding || clinging ? 0 : 0.55), motion.z);
+      squirrel.object.position.set(
+        motion.x,
+        motion.y + (gliding || clinging || climbing ? 0 : 0.55),
+        motion.z,
+      );
       squirrel.object.rotation.y = motion.heading;
       // Pitch the nose along the flight path, and bank into the turn.
       squirrel.object.rotation.x = gliding
@@ -105,7 +111,7 @@ export function createRenderer(canvas, world) {
       squirrel.update(
         gliding ? 1 : 0,
         gliding ? MathUtils.clamp(motion.yawRate * 0.55, -0.8, 0.8) : 0,
-        clinging,
+        clinging || climbing,
       );
 
       followCamera.update(motion, glider.phase, dt);

@@ -1322,3 +1322,68 @@ removes the single-frame flip that read as a jolt without adding lag to the
 perched and gliding framing that has already been tuned. A time limit rather
 than a distance check ends the entry, so it cannot stretch out if the
 squirrel is moving.
+
+## D-72 — A trunk catch climbs into view instead of teleporting to the perch
+
+**Ambiguity.** LAN-571 asked for a bare-trunk catch on an ordinary tree to
+scamper up visibly rather than snapping straight to the perch, without
+saying which of the two catch volumes should trigger it, whether the events
+that already fire at the moment of catch (`glide:landed`, run-chain scoring,
+puzzle solve/fail, material collection) should move to the moment the climb
+finishes, or what happens to a held launch input during the climb.
+
+**Decision.** Only the trunk volume climbs — a canopy catch (at or above
+`perchY - canopyDepth`) still drops straight onto the perch exactly as
+before, and so does a ground-contact reset, which stays a teleport. Every
+game event that used to fire at catch still fires at catch, unchanged:
+`resolveLanding` keeps returning `reason: 'perch'` for a trunk catch too, so
+none of the existing listeners, the run tracker, or the puzzle trial need to
+know a climb is happening — it is presentation between the catch and the
+perch, not a new outcome. The one addition is `climbFrom`, a point on the
+trunk's bark at the height of the catch, carried on the landing result;
+`doLand`'s whole perch path (events, run scoring, puzzle resolution,
+`interactions.land`, material collection) runs exactly as it does today, and
+only the final glider assignment branches on whether `climbFrom` is present.
+A new `climbing` phase in `client/src/sim/glider.js` moves the glider
+straight up the trunk surface at `profile.climbSpeed` on a fixed timestep,
+keeping the heading it was flying at catch (`perchHeading`) so the perch it
+lands on faces the way the squirrel arrived, the same as a direct catch
+does today. It reaches the perch by snapping from the trunk surface to the
+perch's centre once `y` would reach or pass `perchY`, rather than sliding
+along the surface the whole way up. Launch input during a climb is ignored
+outright and does not queue for the moment it becomes perched.
+
+**Reasoning.** Keeping every event at catch time means LAN-571 cannot change
+what a run is worth or when a puzzle resolves — a purely visual issue stays
+visual. Reusing `reason: 'perch'` rather than inventing a third reason means
+none of the code that already branches on landing reasons needs to change,
+and a future reader only has to learn `climbFrom` exists, not a new outcome
+to handle. Keeping the flight heading for the eventual perch matches what a
+direct catch already did, so a canopy catch and a climbed one end up facing
+the same way. Ignoring launch outright, rather than queuing it, keeps the
+climb's timing simple and matches the product doc's "floaty and forgiving"
+pillar better than punishing an impatient held key.
+
+## D-73 — `climbSpeed` as a tuning dial; the climb reuses the cling camera and pose
+
+**Ambiguity.** LAN-571 left open how fast the climb should be, whether it
+belongs in `GLIDE_TUNING` or somewhere else, and what the camera and squirrel
+pose should do while it happens — a state genuinely new to the render layer.
+
+**Decision.** `climbSpeed` (8 m/s) joins `GLIDE_TUNING` and flows through
+`deriveGlideProfile` like every other dial nothing below it may read
+directly, and it gets its own row on the tuning panel (min 1, max 24, step
+0.5) so it can be felt out the same way the rest of the glide can. The
+renderer and follow camera treat `climbing` as the same "side view" as
+`clinging`: no perch lift, the same cling body pose, and the same
+side-on rig, entry ease, and look-ease rules — including on the way back
+out, when the climb finishes and the phase becomes `perched`, which now
+counts as leaving a side view exactly as leaving a cling already did.
+
+**Reasoning.** A dial governs how the climb feels, exactly like cruise speed
+or turn rate, so it belongs with them rather than as a hardcoded constant
+nothing can retune. The cling pose and camera already solve "squirrel
+plastered against bark, camera to the side" for the towering-trunk case;
+climbing is the same shape of problem on an ordinary trunk, and reusing the
+rig means LAN-571 adds no new camera code, just one more phase that counts
+as the view already tuned in D-68 and D-71.

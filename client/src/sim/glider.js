@@ -1,10 +1,12 @@
 /**
  * The squirrel's state machine.
  *
- * Three states — `perched`, `gliding`, and `clinging` (LAN-554: caught the
- * side of a towering trunk mid-glide, rather than reaching its perch, because
- * towering trees don't have one). There is no crash state and no death: see
- * the note in `landing.js`.
+ * Four states — `perched`, `gliding`, `clinging` (LAN-554: caught the side of
+ * a towering trunk mid-glide, rather than reaching its perch, because
+ * towering trees don't have one), and `climbing` (LAN-571: caught the bare
+ * trunk of an ordinary tree below its canopy band, and scampers up to the
+ * perch rather than teleporting there). There is no crash state and no
+ * death: see the note in `landing.js`.
  *
  * Pure functions over a plain state object. Nothing here imports Three.js, so
  * the whole machine runs in Node under Vitest.
@@ -16,6 +18,7 @@ export const GliderPhase = Object.freeze({
   PERCHED: 'perched',
   GLIDING: 'gliding',
   CLINGING: 'clinging',
+  CLIMBING: 'climbing',
 });
 
 /** Put the squirrel on a tree's launch branch, facing `heading`. */
@@ -114,6 +117,54 @@ export function clingTo(glider, tree, point) {
       vy: 0,
     },
     glide: glider.glide,
+  };
+}
+
+/**
+ * Catch the bare trunk of an ordinary tree below its canopy band, at `point`,
+ * facing back at its centre like a cling. Unlike a cling this is not the end
+ * of the line — there is a perch above to scamper up to (LAN-571) — so the
+ * flight heading is kept as `perchHeading`, for `stepClimb` to hand the
+ * squirrel once the climb tops out, the same heading `landOn` would have used
+ * for a direct catch.
+ */
+export function climbFrom(glider, tree, point) {
+  const centre = tree.position;
+  return {
+    phase: GliderPhase.CLIMBING,
+    treeId: tree.id,
+    perchHeading: glider.motion.heading,
+    motion: {
+      x: point.x,
+      y: point.y,
+      z: point.z,
+      heading: Math.atan2(centre.x - point.x, centre.z - point.z),
+      yawRate: 0,
+      speed: 0,
+      vy: 0,
+    },
+    glide: glider.glide,
+  };
+}
+
+/**
+ * Advance a trunk climb by `dt`. Moves straight up the trunk surface at
+ * `profile.climbSpeed`; once it reaches the perch it hands off to `perchOn`
+ * directly rather than overshooting, using the heading the squirrel was
+ * flying when it was caught (LAN-571). Pure — does not mutate `glider`.
+ */
+export function stepClimb(glider, tree, profile, dt) {
+  const y = glider.motion.y + profile.climbSpeed * dt;
+  if (y >= tree.perchY) {
+    return { ...perchOn(tree, glider.perchHeading ?? glider.motion.heading), glide: glider.glide };
+  }
+  return {
+    ...glider,
+    motion: {
+      ...glider.motion,
+      y,
+      vy: profile.climbSpeed,
+    },
   };
 }
 

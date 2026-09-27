@@ -67,6 +67,9 @@ export const GLIDE_TUNING = Object.freeze({
   /** Clamps, purely defensive. */
   minSpeed: 0,
   maxSpeed: 40,
+
+  /** Speed scampering up a trunk after a climb-triggering catch (m/s). */
+  climbSpeed: 8,
 });
 
 /** Default forest layout. One small area — Phase 1 is a single zone. */

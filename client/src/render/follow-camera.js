@@ -52,12 +52,14 @@ export function createFollowCamera(camera) {
   return {
     /**
      * @param {{x:number,y:number,z:number,heading:number,speed:number}} motion
-     * @param {'perched'|'gliding'|'clinging'} phase the glider's phase
+     * @param {'perched'|'gliding'|'clinging'|'climbing'} phase the glider's phase
      * @param {number} dt
      */
     update(motion, phase, dt) {
       const gliding = phase === 'gliding';
-      const clinging = phase === 'clinging';
+      // A trunk climb (LAN-571) is the same side-on view as a cling — both
+      // are the squirrel facing bark, not a branch ahead of it.
+      const clinging = phase === 'clinging' || phase === 'climbing';
       const rig = clinging ? CLINGING : gliding ? GLIDING : PERCHED;
       const forwardX = Math.sin(motion.heading);
       const forwardZ = Math.cos(motion.heading);
@@ -80,9 +82,10 @@ export function createFollowCamera(camera) {
         );
       }
 
+      const lastWasSideView = lastPhase === 'clinging' || lastPhase === 'climbing';
       if (initialised && phase !== lastPhase) {
         if (clinging) clingEntryAge = 0;
-        if (clinging || lastPhase === 'clinging') lookEasing = true;
+        if (clinging || lastWasSideView) lookEasing = true;
       }
       const entering = clinging && clingEntryAge < CLING_ENTRY.seconds;
       const stiffness = entering ? CLING_ENTRY.stiffness : rig.stiffness;

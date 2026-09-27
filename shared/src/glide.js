@@ -48,6 +48,7 @@ export function deriveGlideProfile(stats = BASE_GLIDE_STATS, tuning = GLIDE_TUNI
     ),
     sinkResponse: tuning.baseSinkResponse + tuning.sinkResponsePerFallControlTier * s.fallControl,
     launchSpeed: cruiseSpeed * tuning.launchSpeedFactor,
+    climbSpeed: tuning.climbSpeed,
   };
 }
 

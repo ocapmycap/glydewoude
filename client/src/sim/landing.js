@@ -23,7 +23,8 @@ import { distance2D, nearestTree } from '@glidewood/shared';
  *
  * Either way the squirrel ends up on the perch at the top — squirrels climb,
  * so catching bark anywhere on the upper trunk means scampering up to the
- * launch branch.
+ * launch branch. A canopy catch drops the squirrel there directly; a bare
+ * trunk catch scampers up first, in view, before it's perched (LAN-571).
  *
  * That one rule is what makes the loop sustainable. A glide only ever loses
  * altitude, so something has to give it back, and a tall trunk is it: aim low
@@ -44,21 +45,14 @@ export function treeCatches(tree, position) {
 }
 
 /**
- * Where a towering trunk catches the squirrel, or null if this step missed
- * it (LAN-554).
- *
- * A towering tree has no perch and so no climbable canopy volume — the whole
- * trunk, from the ground up to its top, is bark a squirrel can grab, with no
- * `minCatchY` floor the way an ordinary tree's side-catch has.
+ * Project a catch onto the trunk's bark, on the side the squirrel is coming
+ * from: straight out from the centre along the direction to `next`, falling
+ * back to the direction to `previous` and then +Z so a hit dead-centre on
+ * the trunk's axis never divides by zero. Shared by the towering cling catch
+ * and the ordinary-tree trunk catch (LAN-571) — both put the squirrel on the
+ * bark at the height it was actually caught, not the tree's centre line.
  */
-function clingPoint(tree, previous, next) {
-  if (distance2D(tree.position, next) > tree.catchRadius) return null;
-  if (next.y > tree.position.y + tree.trunkHeight) return null;
-
-  // The point lands on the trunk surface, on the side the squirrel is
-  // coming from: straight out from the centre along the direction to
-  // `next`, falling back to the direction to `previous` and then +Z so a
-  // hit dead-centre on the trunk's axis never divides by zero.
+function trunkSurfacePoint(tree, previous, next) {
   let dx = next.x - tree.position.x;
   let dz = next.z - tree.position.z;
   if (dx === 0 && dz === 0) {
@@ -77,13 +71,27 @@ function clingPoint(tree, previous, next) {
 }
 
 /**
+ * Where a towering trunk catches the squirrel, or null if this step missed
+ * it (LAN-554).
+ *
+ * A towering tree has no perch and so no climbable canopy volume — the whole
+ * trunk, from the ground up to its top, is bark a squirrel can grab, with no
+ * `minCatchY` floor the way an ordinary tree's side-catch has.
+ */
+function clingPoint(tree, previous, next) {
+  if (distance2D(tree.position, next) > tree.catchRadius) return null;
+  if (next.y > tree.position.y + tree.trunkHeight) return null;
+  return trunkSurfacePoint(tree, previous, next);
+}
+
+/**
  * Resolve a single simulation step's movement against the world.
  *
  * At 60 Hz a step moves well under a metre, and the narrowest catch volume is
  * several metres across, so a point test on the new position is sufficient —
  * there is nothing thin enough to tunnel through.
  *
- * @returns {{tree: object, reason: 'perch'|'ground'}|{tree: object, reason: 'cling', point: {x: number, y: number, z: number}}|null}
+ * @returns {{tree: object, reason: 'perch'|'ground', climbFrom?: {x: number, y: number, z: number}}|{tree: object, reason: 'cling', point: {x: number, y: number, z: number}}|null}
  */
 export function resolveLanding(world, previous, next, fromTreeId = null) {
   if (next.y <= world.config.groundY) {
@@ -111,6 +119,11 @@ export function resolveLanding(world, previous, next, fromTreeId = null) {
       if (horizontal <= tree.perchRadius + 0.5) continue;
     }
     if (treeCatches(tree, next)) {
+      // Below the canopy band is bare trunk, not the canopy blob — a climb up
+      // to the perch, not a drop straight onto it (LAN-571).
+      if (next.y < tree.perchY - tree.canopyDepth) {
+        return { tree, reason: 'perch', climbFrom: trunkSurfacePoint(tree, previous, next) };
+      }
       return { tree, reason: 'perch' };
     }
   }

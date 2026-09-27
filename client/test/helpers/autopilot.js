@@ -15,10 +15,16 @@ function wrapAngle(angle) {
 /**
  * Pick a tree we can still arrive at inside its catch band.
  *
- * Note what this does *not* require: that the target be below us. Catching a
- * tall trunk halfway up and climbing to its top is how a player regains
- * altitude, so the pilot happily aims at trees whose perch is above its head —
- * it only needs to arrive above the tree's `minCatchY`.
+ * Note what this does *not* require: that the target be below us. The pilot
+ * happily aims at trees whose perch is above its head, gaining altitude by
+ * catching the tree at all — it only needs to arrive above the tree's
+ * `minCatchY`. It does, though, aim for the *canopy* catch specifically
+ * (arriving within `canopyDepth` of the perch) rather than the bare trunk
+ * below it: since LAN-571 a trunk catch scampers up over several real
+ * simulated seconds before reaching the perch, and the smoke/run-mode tests
+ * that fly this pilot assert the hop resolves the instant it stops gliding.
+ * `climb.test.js` exercises the trunk-catch climb directly, with its own
+ * hand-built world.
  */
 export function chooseTarget(simulation) {
   const { motion } = simulation.glider;
@@ -37,7 +43,8 @@ export function chooseTarget(simulation) {
     // Altitude we would arrive with, flying straight there at cruise. The
     // margin absorbs the extra sink that turning costs us.
     const arrivalY = motion.y - range / glideRatio;
-    if (arrivalY < tree.minCatchY + 3 || arrivalY > tree.perchY) continue;
+    const canopyFloor = Math.max(tree.minCatchY + 3, tree.perchY - tree.canopyDepth);
+    if (arrivalY < canopyFloor || arrivalY > tree.perchY) continue;
 
     const bearing = Math.atan2(dx, dz);
     const turn = Math.abs(wrapAngle(bearing - motion.heading));
