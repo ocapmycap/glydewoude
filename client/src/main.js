@@ -25,6 +25,7 @@ import { createRunHud } from './ui/run-hud.js';
 import { createLeafBurst } from './render/leaf-burst.js';
 import { createMilestoneBurst } from './ui/milestone-burst.js';
 import { createRings } from './render/rings.js';
+import { createWind } from './render/wind.js';
 import { createPuzzlePrompt } from './ui/puzzle-prompt.js';
 
 import './style.css';
@@ -136,3 +137,7 @@ simulation.on((event) => {
   else if (['puzzle:solved', 'puzzle:failed', 'glide:respawned'].includes(event.type)) rings.hide();
 });
 createPuzzlePrompt(overlay, simulation);
+
+// Streaks and leaves drifting on the wind near the camera. Visual only: the
+// simulation never hears about it (D-61).
+createWind(renderer.scene, world);

@@ -1004,3 +1004,43 @@ already behaves, keeping the two input paths consistent. Polling once per
 step is the same cadence every other input source already runs at; a missed
 sub-step press is an acceptable trade against reading raw browser state at a
 different rate than the simulation advances.
+
+## D-61 — Wind is visual only, with one seeded direction per world
+
+**Ambiguity.** LAN-552 asks for visible wind. Real wind would push the
+squirrel and change glide feel, which is the Phase 1 go/no-go (product doc
+§9). It is also open whether wind should vary across the forest.
+
+**Decision.** `client/src/render/wind.js` draws streaks and leaves and
+nothing else; the simulation never hears about wind. One prevailing heading
+per world, drawn from `createRng(world.seed ^ 0x77a1d5e3)` in the glider's
+heading convention, so the same world always blows the same way. Spawn
+positions, lifetimes and wobble use `Math.random()`, which `CLAUDE.md` allows
+under `render/`.
+
+**Reasoning.** Pushing the squirrel needs a human playtest. A fixed direction
+reads as weather; per-mark random directions would read as noise. Salting the
+seed keeps the wind stream apart from worldgen's, so it cannot disturb the
+forest.
+
+## D-62 — A fixed pool of marks around the camera, recycled in place
+
+**Ambiguity.** How to keep the effect's cost flat, and how to fade marks
+subtly when toon materials cannot fade per instance (D-43).
+
+**Decision.** 24 streaks share one `LineSegments` buffer (8 points each) and
+12 leaves share one `InstancedMesh`, both built once. Marks spawn within 60 m
+of the camera (horizontally), in a band from 14 m below to 10 m above it and
+never under 1.5 m above the ground. A mark is respawned when its life ends or
+when it is more than 70 m from the camera. Streaks fade through per-vertex
+alpha (a four-component colour attribute): the tail is transparent, and the
+whole streak rises and falls with `sin(pi * t)` to a peak of 0.35. Leaves use
+a transparent toon material at 0.7 opacity with no outline hull, and grow in
+and shrink away like the landing burst. The step runs in the streaks'
+`onBeforeRender`, which gets the camera it draws for, and writes into
+preallocated buffers without allocating.
+
+**Reasoning.** Two draw calls and no allocation, however large the forest.
+Lines stay one pixel wide at any distance, which gives "thin" without a
+camera-facing ribbon. Recycling marks the camera has outrun keeps the density
+steady at glide speed.

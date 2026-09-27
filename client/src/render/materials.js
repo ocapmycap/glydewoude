@@ -41,6 +41,9 @@ export const PALETTE = Object.freeze({
   // for the next one due and the target marker, so "go here" is one colour.
   ring: 0xf4ead0,
   ringNext: 0xffc83d,
+  // Wind streaks (wind.js): a near-white with a warm tint, so at low
+  // opacity against the sky they read as moving air, not as rings.
+  wind: 0xf7f4e6,
 });
 
 /**
