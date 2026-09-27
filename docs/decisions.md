@@ -879,3 +879,44 @@ rejects in-plane and zero-length segments before the one division, so no
 separate guard is needed. The ring's `normal` is assumed unit length, as
 worldgen builds it (D-49); a non-unit normal would scale both distances
 equally and still give the right answer.
+
+## D-53 — Every perch on a puzzle tree arms it, and PUZZLE is now a registered interaction
+
+**Ambiguity.** LAN-548 says "perching on a puzzle tree arms its trial", but
+the squirrel also ends up perched after a ground reset, at construction and
+after a respawn. The issue also asks for a `PUZZLE` interaction while saying
+the existing interaction tests pass unchanged, yet
+`client/test/interactions.test.js` asserted `PUZZLE` was *not* registered.
+
+**Decision.** Any perch on a puzzle tree arms it — a catch, a ground reset
+that climbs one, the spawn perch and a respawn. A ground failure and a re-arm
+can therefore arrive together (`puzzle:failed` then `puzzle:armed`). Perching
+on any other tree clears an unstarted trial silently. The one `PUZZLE` line in
+"does not register economy interactions" was removed and a positive test
+added beside it, as D-50 said this ticket would; the shop, cafeteria and
+customization assertions are untouched.
+
+**Reasoning.** The squirrel can launch from wherever it perches, so arming on
+every perch keeps "am I on a puzzle tree?" a single rule. The great tree is
+never a puzzle (D-49), so spawn arming only matters for hand-built test
+worlds. The assertion change was planned in D-50; leaving it would have made
+the issue's explicit registration impossible.
+
+## D-54 — The trial returns events from plain methods; failures name the puzzle tree
+
+**Ambiguity.** The issue fixes the `puzzle:solved` payload but not the others,
+nor exactly when in a step each check runs.
+
+**Decision.** `createPuzzleTrial()` exposes `arm`, `start`, `step`, `land` and
+`respawn`, each returning an event array the simulation emits. Payloads:
+`puzzle:armed { tree, course }`, `puzzle:started { treeId, course }`,
+`puzzle:ring { treeId, index }`, `puzzle:solved { treeId, atTime, glide }`,
+`puzzle:failed { treeId, reason }`, where `treeId` is always the puzzle tree.
+Rings are checked after the glide step and before landing is resolved, so a
+ring crossed on the step that catches the target still counts. Puzzle events
+follow `glide:landed` and the run events, and precede interactions and
+material collection.
+
+**Reasoning.** Returning events mirrors `runs.extend` and keeps the trial
+testable without a simulation. Naming the puzzle tree in every event lets the
+UI (LAN-549) and the server intent (LAN-550) key on one id.

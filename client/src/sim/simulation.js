@@ -26,6 +26,7 @@ import { createCollectionLedger } from './collection.js';
 import { createInteractionRegistry, landmarkInteraction } from './interactions.js';
 import { GliderPhase, landOn, launch, perchOn, stepAirborne } from './glider.js';
 import { resolveLanding } from './landing.js';
+import { createPuzzleTrial } from './puzzle.js';
 import { createRunTracker } from './run.js';
 import { resetEdges } from './input-state.js';
 
@@ -49,6 +50,11 @@ export function createSimulation(options = {}) {
 
   const interactions = createInteractionRegistry();
   interactions.register(TREE_TYPES.LANDMARK, landmarkInteraction);
+  // A puzzle tree is still a named perch — it announces itself the same way
+  // a landmark does (D-50); `puzzle` below handles the ring trial itself.
+  interactions.register(TREE_TYPES.PUZZLE, landmarkInteraction);
+
+  const puzzle = createPuzzleTrial();
 
   const collection = createCollectionLedger({
     caches: options.caches ?? generateMaterialCaches(world),
@@ -68,6 +74,10 @@ export function createSimulation(options = {}) {
 
   // Announce the spawn perch the same way any other landing would.
   interactions.land(spawnTree, context());
+  // Arm a puzzle course on the spawn tree, if it has one. No listeners are
+  // attached yet, so these events are dropped the same way the announcement
+  // above is — a respawn later re-arms with someone actually listening.
+  puzzle.arm(spawnTree);
 
   function treeById(id) {
     return world.trees.find((tree) => tree.id === id) ?? null;
@@ -79,6 +89,7 @@ export function createSimulation(options = {}) {
     interactions.leave(from, context());
     glider = launch(glider, profile, tuning);
     emit({ type: 'glide:launched', tree: from });
+    for (const puzzleEvent of puzzle.start(from)) emit(puzzleEvent);
 
     // The first launch after a perch with no chain going opens a run; every
     // launch in the middle of one is silent.
@@ -102,6 +113,10 @@ export function createSimulation(options = {}) {
       for (const runEvent of runs.extend(tree, finished)) emit(runEvent);
     }
 
+    for (const puzzleEvent of puzzle.land(tree, { reason, atTime: elapsed, glide: finished })) {
+      emit(puzzleEvent);
+    }
+
     interactions.land(tree, context());
 
     // Materials are claimed by arriving, which reuses the landing the player
@@ -111,10 +126,13 @@ export function createSimulation(options = {}) {
   }
 
   function doRespawn() {
+    for (const puzzleEvent of puzzle.respawn()) emit(puzzleEvent);
+
     const from = treeById(glider.treeId);
     if (from) interactions.leave(from, context());
     glider = perchOn(spawnTree);
     emit({ type: 'glide:respawned', tree: spawnTree });
+    for (const puzzleEvent of puzzle.arm(spawnTree)) emit(puzzleEvent);
 
     // Going home is not a clean finish, but it must not leave a chain running
     // either — the run ends here and the HUD can tell the two endings apart.
@@ -131,6 +149,7 @@ export function createSimulation(options = {}) {
     interactions,
     collection,
     runTuning,
+    puzzle,
 
     /** Subscribe to simulation events; returns an unsubscribe function. */
     on(listener) {
@@ -184,6 +203,7 @@ export function createSimulation(options = {}) {
 
       const { glider: moved, previous } = stepAirborne(glider, input, profile, dt, tuning);
       glider = moved;
+      for (const puzzleEvent of puzzle.step(previous, glider.motion)) emit(puzzleEvent);
 
       // Once clear of the tree we launched from, allow landing on it again —
       // otherwise a loop back around to the same branch would fly straight
