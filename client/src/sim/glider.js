@@ -63,8 +63,12 @@ export function launch(glider, profile, tuning) {
   const startMotion = fromCling
     ? { ...glider.motion, heading: wrapHeading(glider.motion.heading + Math.PI) }
     : glider.motion;
+  // Strip any in-progress about-face (LAN-577): a fresh perch later must not
+  // resume a stale turn left over from before this glide.
+  const rest = { ...glider };
+  delete rest.perchTurn;
   return {
-    ...glider,
+    ...rest,
     phase: GliderPhase.GLIDING,
     treeId: null,
     fromTreeId: glider.treeId,
@@ -164,6 +168,48 @@ export function stepClimb(glider, tree, profile, dt) {
       ...glider.motion,
       y,
       vy: profile.climbSpeed,
+    },
+  };
+}
+
+/**
+ * Turn the squirrel in place while perched (LAN-577).
+ *
+ * No-op off the perch — clinging and climbing still ignore steer and pitch
+ * entirely. While perched, `input.steer` spins the squirrel at
+ * `profile.perchTurnRate`, right decreasing heading like every other turn in
+ * this game. A back-tap (`input.aboutFace`, the rising edge of pitch >= 0.5,
+ * detected by the caller) instead plays a scripted half-turn of exactly π
+ * toward increasing heading over `profile.aboutFaceDuration`, ignoring steer
+ * for as long as it is in progress. The remaining about-face angle is kept on
+ * the glider as `perchTurn` (read as `glider.perchTurn ?? 0`, so `perchOn` and
+ * `landOn` need no change to start every perch with none in progress) —
+ * `input.aboutFace` only matters to *start* a new one; once `perchTurn > 0`
+ * the turn already in progress keeps going regardless of what the input says
+ * this step, so holding the key down does not restart it every tick.
+ */
+export function stepPerch(glider, input, profile, dt) {
+  if (glider.phase !== GliderPhase.PERCHED) return glider;
+
+  let remaining = glider.perchTurn ?? 0;
+  if (remaining <= 0 && input.aboutFace) remaining = Math.PI;
+
+  if (remaining > 0) {
+    const step = Math.min(remaining, (Math.PI / profile.aboutFaceDuration) * dt);
+    return {
+      ...glider,
+      perchTurn: remaining - step,
+      motion: { ...glider.motion, heading: wrapHeading(glider.motion.heading + step) },
+    };
+  }
+
+  const steer = Math.max(-1, Math.min(1, input.steer ?? 0));
+  return {
+    ...glider,
+    perchTurn: 0,
+    motion: {
+      ...glider.motion,
+      heading: wrapHeading(glider.motion.heading - steer * profile.perchTurnRate * dt),
     },
   };
 }

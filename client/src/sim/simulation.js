@@ -33,6 +33,7 @@ import {
   perchOn,
   stepAirborne,
   stepClimb,
+  stepPerch,
 } from './glider.js';
 import { resolveLanding } from './landing.js';
 import { createPuzzleTrial } from './puzzle.js';
@@ -78,6 +79,12 @@ export function createSimulation(options = {}) {
   const spawnTree = world.trees.find((tree) => tree.id === world.spawnTreeId);
   let glider = perchOn(spawnTree);
   let elapsed = 0;
+  // Edge-detected across every phase (LAN-577): a back-tap about-face fires
+  // once when pitch crosses up into flare range, not once per step it stays
+  // held. Tracking this outside PERCHED too means a flare held all the way
+  // down through a landing doesn't count as "just pressed" the moment the
+  // squirrel touches a perch.
+  let backHeld = false;
 
   const context = () => ({ glider, world, emit });
 
@@ -215,15 +222,30 @@ export function createSimulation(options = {}) {
     step(input, dt) {
       elapsed += dt;
 
+      const pitchBack = (input.pitch ?? 0) >= 0.5;
+      const aboutFaceEdge = pitchBack && !backHeld;
+      backHeld = pitchBack;
+
       if (input.respawn) {
         doRespawn();
         resetEdges(input);
         return;
       }
 
-      // Launching can start from either a perch or a cling — neither is
-      // airborne, so both wait here for the launch input.
-      if (glider.phase === GliderPhase.PERCHED || glider.phase === GliderPhase.CLINGING) {
+      // A cling never turns in place — there is no branch underfoot, just
+      // bark — so only a perch reads steer and the about-face edge; both
+      // still launch on the same input.
+      if (glider.phase === GliderPhase.PERCHED) {
+        if (input.launch) {
+          doLaunch();
+        } else {
+          glider = stepPerch(glider, { steer: input.steer, aboutFace: aboutFaceEdge }, profile, dt);
+        }
+        resetEdges(input);
+        return;
+      }
+
+      if (glider.phase === GliderPhase.CLINGING) {
         if (input.launch) doLaunch();
         resetEdges(input);
         return;

@@ -6,13 +6,14 @@
  * by hand, so the simulation never learns whether a human or a test is flying.
  *
  * Controls (§2.2 asks for mouse-look or arrow keys; both are wired):
- *   A / D / left / right    steer
+ *   A / D / left / right    steer (also turns on the spot while perched)
  *   W / S / up / down       dive / flare
- *   mouse (after clicking)  steer and pitch, via pointer lock
+ *   mouse (after clicking)  steer and pitch, via pointer lock (same, while perched)
+ *   S / down (perched)      turn round (about-face)
  *   space                   launch
  *   R                       return to the great tree
  *   N                       toggle floating names above named trees
- *   gamepad left stick      steer / pitch (forward = dive)
+ *   gamepad left stick      steer / pitch (forward = dive); turns on the spot while perched
  *   gamepad A               launch
  *   gamepad Y               toggle shop
  *   gamepad Back / Select   return to the great tree

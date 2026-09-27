@@ -70,6 +70,11 @@ export const GLIDE_TUNING = Object.freeze({
 
   /** Speed scampering up a trunk after a climb-triggering catch (m/s). */
   climbSpeed: 8,
+
+  /** Turn rate spinning on the spot while perched (rad/s). */
+  perchTurnRate: 2.5,
+  /** How long the back-tap about-face takes, so the camera sweeps rather than cuts (s). */
+  aboutFaceDuration: 0.4,
 });
 
 /** Default forest layout. One small area — Phase 1 is a single zone. */

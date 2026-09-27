@@ -1431,3 +1431,42 @@ across many instances — there is no per-tree "time since this tree started
 blocking" to store — so the ease has to live on one shared clock instead,
 which also means a tree completely out of the way renders exactly as it did
 before this feature, at zero cost beyond the one raycast per frame.
+
+---
+
+## D-79 — Turning on the perch: steer spins on the spot, a back-tap about-faces
+
+**Ambiguity.** LAN-577 asked for the squirrel to be able to turn around while
+perched, without saying whether steer and the about-face should share one
+speed, what should trigger the about-face given there was no dedicated input
+field for it, and whether it should interrupt itself if steer is also held.
+
+**Decision.** While `PERCHED`, `input.steer` spins the squirrel on the spot at
+a new `perchTurnRate` (2.5 rad/s), the same sign convention as every other
+turn in the game — right decreases heading. Clinging and climbing are
+unchanged: steer and pitch still do nothing there, exactly as before. A
+back-tap plays a scripted about-face instead: exactly π, always toward
+increasing heading (left), over `aboutFaceDuration` (0.4 s), with steer
+ignored for as long as it is in progress — it does not add to or get
+interrupted by anything held alongside it. Rather than add a new input field,
+the trigger is the rising edge of `input.pitch >= 0.5` — the same threshold
+`stepGlide` already treats as a flare — detected once per step in
+`simulation.js`'s `step()` and tracked across every phase, not just `PERCHED`.
+That gets keyboard S/down, a stick pulled back, and (while pointer-locked) a
+sharp downward mouse move all for free, and it means a flare held all the way
+down through a landing does not fire an about-face the instant the squirrel
+reaches a perch — the edge already happened in the air, well before landing.
+`perchTurnRate` gets a row on the tuning panel, the same as every other feel
+dial; `aboutFaceDuration` does not, since the issue only asked for the turn
+rate to be tunable. No interaction handler auto-faces the squirrel toward
+anything — this is purely player input, exactly as landing already leaves
+heading wherever the approach put it.
+
+**Reasoning.** Reusing the flare threshold instead of adding a new bound key
+keeps the input surface the same shape `input-state.js` already has —
+`steer` and `pitch` are the only motion-relevant fields on `InputState`, and
+every other feature so far has found a way to read them rather than growing
+the struct. Edge-detecting in `simulation.js` rather than in `stepPerch`
+keeps `stepPerch` a pure function of its own arguments (`{ steer, aboutFace }`)
+with no memory of previous input, which is what lets it be tested directly
+without going through the simulation at all.

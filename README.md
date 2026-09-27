@@ -52,13 +52,14 @@ to deploy in Phase 1.
 | Input | Action |
 |---|---|
 | <kbd>Space</kbd> | Launch from the branch |
-| <kbd>A</kbd> <kbd>D</kbd> or <kbd>←</kbd> <kbd>→</kbd> | Steer |
+| <kbd>A</kbd> <kbd>D</kbd> or <kbd>←</kbd> <kbd>→</kbd> | Steer (turns on the spot while perched) |
 | <kbd>W</kbd> <kbd>S</kbd> or <kbd>↑</kbd> <kbd>↓</kbd> | Dive / flare |
+| <kbd>S</kbd> / <kbd>↓</kbd> (perched) | Turn round |
 | Click the canvas | Steer with the mouse instead (pointer lock; <kbd>Esc</kbd> releases) |
 | <kbd>R</kbd> | Return to the great oak |
 | <kbd>T</kbd> | Show or hide the glide tuning dials |
 | <kbd>N</kbd> | Show or hide the names of named trees |
-| Gamepad left stick | Steer; push forward to dive, pull back to flare |
+| Gamepad left stick | Steer; push forward to dive, pull back to flare; turns on the spot while perched |
 | Gamepad <kbd>A</kbd> | Launch from the branch |
 | Gamepad <kbd>Y</kbd> | Open or close the shop |
 | Gamepad <kbd>Back</kbd> / <kbd>Select</kbd> | Return to the great oak |

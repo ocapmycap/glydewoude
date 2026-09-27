@@ -22,6 +22,7 @@ const DIALS = [
   { key: 'gravity', label: 'gravity', min: 6, max: 40, step: 0.5 },
   { key: 'launchHop', label: 'launch hop', min: 0, max: 8, step: 0.2 },
   { key: 'climbSpeed', label: 'climb speed', min: 1, max: 24, step: 0.5 },
+  { key: 'perchTurnRate', label: 'perch turn rate', min: 0.5, max: 6, step: 0.1 },
 ];
 
 export function createTuningPanel(root, simulation) {
