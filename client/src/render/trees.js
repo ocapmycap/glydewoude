@@ -191,8 +191,10 @@ export function createForest(world) {
   const group = new Group();
   group.name = 'forest';
 
-  // The great tree draws itself; everything else is instanced.
-  const trees = world.trees.filter((tree) => tree.id !== world.spawnTreeId);
+  // The great tree draws itself; everything else is instanced. Towering
+  // trees have no perch (perchY: null), which would NaN every canopy
+  // position computed below — LAN-555 gives them their own draw pass.
+  const trees = world.trees.filter((tree) => tree.id !== world.spawnTreeId && !tree.towering);
   const greatTree = world.trees.find((tree) => tree.id === world.spawnTreeId);
 
   const trunkGeometry = new CylinderGeometry(0.75, 1, 1, 7, 1);

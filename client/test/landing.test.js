@@ -68,3 +68,50 @@ describe('resolveLanding', () => {
     expect(resolveLanding(world, spot, spot, tree.id)).toBeNull();
   });
 });
+
+describe('towering trees (LAN-553)', () => {
+  // Hand-built, not the real forest: one ordinary tree and one towering tree
+  // (no perch: perchY: null), with the towering tree deliberately the closer
+  // of the two to the ground-contact point below.
+  const toweringTree = {
+    id: 'tree-towering',
+    towering: true,
+    position: { x: 2, y: 0, z: 0 },
+    perchY: null,
+    minCatchY: 40,
+    catchRadius: 6,
+    perchRadius: 10,
+    canopyDepth: 25,
+  };
+  const ordinaryTree = {
+    id: 'tree-ordinary',
+    towering: false,
+    position: { x: 20, y: 0, z: 0 },
+    perchY: 20,
+    minCatchY: 5,
+    catchRadius: 3,
+    perchRadius: 4,
+    canopyDepth: 6,
+  };
+  const groundWorld = {
+    config: { groundY: 0 },
+    trees: [ordinaryTree, toweringTree],
+  };
+
+  it('treeCatches returns false for a towering tree at any height (no perch to climb to; clinging is LAN-554)', () => {
+    for (const y of [-1, 0, toweringTree.minCatchY, toweringTree.minCatchY + 5, 500]) {
+      expect(treeCatches(toweringTree, { x: toweringTree.position.x, y, z: toweringTree.position.z }))
+        .toBe(false);
+    }
+  });
+
+  it('resets ground contact next to a towering tree onto the nearest ordinary tree instead', () => {
+    // Nearer to the towering tree than to the ordinary one, so an unfiltered
+    // nearest-tree search would pick the towering tree — which has no perch
+    // to climb, so the ground reset must skip past it.
+    const spot = { x: 1, y: -0.1, z: 0 };
+    const landing = resolveLanding(groundWorld, { ...spot, y: 1 }, spot);
+    expect(landing.reason).toBe('ground');
+    expect(landing.tree.id).toBe(ordinaryTree.id);
+  });
+});

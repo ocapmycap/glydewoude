@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { TREE_TYPES, WORLD_CONFIG, STRUCTURE_KINDS, PUZZLE_CONFIG, BASE_GLIDE_STATS } from '../src/constants.js';
+import {
+  TREE_TYPES,
+  WORLD_CONFIG,
+  STRUCTURE_KINDS,
+  PUZZLE_CONFIG,
+  BASE_GLIDE_STATS,
+  TOWERING_TREE_CONFIG,
+} from '../src/constants.js';
 import { distance2D } from '../src/math.js';
 import { generateForest, nearestTree } from '../src/worldgen.js';
 import { deriveGlideProfile, maxGlideRange } from '../src/glide.js';
@@ -17,11 +24,13 @@ describe('generateForest', () => {
     expect(a.trees.map((t) => t.position.x)).not.toEqual(b.trees.map((t) => t.position.x));
   });
 
-  it('spawns on the great tree, which is the tallest thing in the forest', () => {
+  it('spawns on the great tree, which is the tallest ordinary thing in the forest', () => {
+    // Narrowed to ordinary trees (LAN-553): towering trees are deliberately
+    // taller than the great tree, so this can no longer hold over every tree.
     const world = generateForest();
     const spawn = world.trees.find((tree) => tree.id === world.spawnTreeId);
     expect(spawn).toBeDefined();
-    for (const tree of world.trees) {
+    for (const tree of world.trees.filter((candidate) => !candidate.towering)) {
       expect(tree.perchY).toBeLessThanOrEqual(spawn.perchY);
     }
   });
@@ -55,8 +64,10 @@ describe('generateForest', () => {
     }
   });
 
-  it('derives coherent catch volumes for every tree', () => {
-    for (const tree of generateForest().trees) {
+  it('derives coherent catch volumes for every ordinary tree', () => {
+    // Narrowed to ordinary trees (LAN-553): towering trees have no perch
+    // (perchY: null), so "minCatchY below the perch" no longer applies to them.
+    for (const tree of generateForest().trees.filter((candidate) => !candidate.towering)) {
       expect(tree.minCatchY).toBeGreaterThan(0);
       expect(tree.minCatchY).toBeLessThan(tree.perchY);
       expect(tree.perchRadius).toBeGreaterThanOrEqual(tree.catchRadius);
@@ -308,10 +319,15 @@ describe('puzzle trees', () => {
     // every position, height and destination roll that follows it. This
     // snapshot was taken before puzzle trees existed, so any change here
     // means the puzzle feature leaked into the shared stream.
+    //
+    // Narrowed to ordinary trees (LAN-553): towering trees are appended after
+    // this snapshot was taken, on their own salted rng stream, exactly like
+    // puzzle courses were — the same reasoning applies to them.
     const world = generateForest();
-    expect(world.trees.length).toBe(187);
+    const ordinary = world.trees.filter((tree) => !tree.towering);
+    expect(ordinary.length).toBe(187);
 
-    const destinations = world.trees.filter((tree) => tree.isDestination);
+    const destinations = ordinary.filter((tree) => tree.isDestination);
     expect(destinations.length).toBe(22);
     expect(destinations.map((tree) => tree.id)).toEqual([
       'tree-great', 'tree-002', 'tree-015', 'tree-022', 'tree-028', 'tree-030',
@@ -321,7 +337,7 @@ describe('puzzle trees', () => {
     ]);
 
     const layout = JSON.stringify(
-      world.trees.map((t) => [t.id, t.position.x, t.position.y, t.position.z, t.trunkHeight, t.perchY]),
+      ordinary.map((t) => [t.id, t.position.x, t.position.y, t.position.z, t.trunkHeight, t.perchY]),
     );
     let hash = 0;
     for (let i = 0; i < layout.length; i += 1) {
@@ -335,5 +351,153 @@ describe('puzzle trees', () => {
     expect(PUZZLE_CONFIG.treeCount).toBeGreaterThanOrEqual(2);
     expect(PUZZLE_CONFIG.treeCount).toBeLessThanOrEqual(3);
     expect(PUZZLE_CONFIG.ringCount).toBe(3);
+  });
+});
+
+describe('towering trees (LAN-553)', () => {
+  /** Tiny FNV-1a — good enough to fingerprint a layout, not to hash passwords. */
+  function fnv1a(text) {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 1) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return hash >>> 0;
+  }
+
+  const round = (n) => Math.round(n * 1e6) / 1e6;
+
+  function ordinaryTreesOf(world) {
+    return world.trees.filter((tree) => !tree.towering);
+  }
+
+  function toweringTreesOf(world) {
+    return world.trees.filter((tree) => tree.towering);
+  }
+
+  // Pinned against the code as it existed immediately before LAN-553, from
+  // generateForest() with the default seed: 187 trees, fingerprinted as
+  // `id|type|x|y|z` (positions rounded to 1e-6) and folded with the FNV-1a
+  // above. Proves towering trees do not disturb a single existing tree.
+  const PINNED_ORDINARY_TREE_COUNT = 187;
+  const PINNED_ORDINARY_TREES_HASH = 1112669281;
+
+  it('leaves the pre-LAN-553 trees, in order, byte-for-byte identical', () => {
+    const world = generateForest();
+    // The pin was taken over the *first* 187 trees, so this assertion has to
+    // hold however towering trees are appended, not just once the ordinary
+    // count happens to match.
+    const firstOrdinary = world.trees.slice(0, PINNED_ORDINARY_TREE_COUNT);
+    const fingerprint = firstOrdinary
+      .map((t) => `${t.id}|${t.type}|${round(t.position.x)}|${round(t.position.y)}|${round(t.position.z)}`)
+      .join('\n');
+    expect(fnv1a(fingerprint)).toBe(PINNED_ORDINARY_TREES_HASH);
+  });
+
+  it('appends exactly TOWERING_TREE_CONFIG.count towering trees to the end of world.trees', () => {
+    const world = generateForest();
+    expect(world.trees.length).toBe(PINNED_ORDINARY_TREE_COUNT + TOWERING_TREE_CONFIG.count);
+
+    const tail = world.trees.slice(-TOWERING_TREE_CONFIG.count);
+    expect(tail.every((tree) => tree.towering === true)).toBe(true);
+    // And nothing earlier in the array is towering — they are strictly
+    // appended, not interleaved.
+    const head = world.trees.slice(0, world.trees.length - TOWERING_TREE_CONFIG.count);
+    expect(head.every((tree) => tree.towering === false)).toBe(true);
+  });
+
+  it('is deterministic for a seed', () => {
+    const a = toweringTreesOf(generateForest());
+    const b = toweringTreesOf(generateForest());
+    expect(a).toEqual(b);
+
+    const c = toweringTreesOf(generateForest({ seed: 'a' }));
+    const d = toweringTreesOf(generateForest({ seed: 'a' }));
+    expect(c).toEqual(d);
+  });
+
+  it('gives every towering tree its own scenery type, no destination and no perch', () => {
+    const world = generateForest();
+    for (const tree of toweringTreesOf(world)) {
+      expect(tree.type).toBe(TREE_TYPES.SCENERY);
+      expect(tree.isDestination).toBe(false);
+      expect(tree.perchY).toBeNull();
+      expect(Number.isFinite(tree.minCatchY)).toBe(true);
+      expect(Number.isFinite(tree.catchRadius)).toBe(true);
+    }
+  });
+
+  it('marks every ordinary tree towering: false', () => {
+    const world = generateForest();
+    for (const tree of ordinaryTreesOf(world)) {
+      expect(tree.towering).toBe(false);
+    }
+  });
+
+  it('makes every towering tree taller than every ordinary tree, including the great tree', () => {
+    const world = generateForest();
+    const ordinary = ordinaryTreesOf(world);
+    const towering = toweringTreesOf(world);
+    expect(towering.length).toBeGreaterThan(0);
+
+    const tallestOrdinaryTrunk = Math.max(...ordinary.map((t) => t.trunkHeight));
+    const tallestOrdinaryTop = Math.max(...ordinary.map((t) => t.position.y + t.trunkHeight));
+
+    for (const tree of towering) {
+      expect(tree.trunkHeight).toBeGreaterThan(tallestOrdinaryTrunk);
+      expect(tree.position.y + tree.trunkHeight).toBeGreaterThan(tallestOrdinaryTop);
+    }
+  });
+
+  it('sizes towering trunks 2.5-3.5x the tallest ordinary trunk range', () => {
+    const world = generateForest();
+    const [, tallestOrdinary] = WORLD_CONFIG.trunkHeightRange;
+    for (const tree of toweringTreesOf(world)) {
+      expect(tree.trunkHeight).toBeGreaterThanOrEqual(2.5 * tallestOrdinary);
+      expect(tree.trunkHeight).toBeLessThanOrEqual(3.5 * tallestOrdinary);
+    }
+  });
+
+  it('gives towering trunks and canopies wider than any ordinary tree', () => {
+    const world = generateForest();
+    const ordinary = ordinaryTreesOf(world);
+    const maxOrdinaryTrunkRadius = Math.max(...ordinary.map((t) => t.trunkRadius));
+    const maxOrdinaryCanopyRadius = Math.max(...ordinary.map((t) => t.canopyRadius));
+
+    for (const tree of toweringTreesOf(world)) {
+      expect(tree.trunkRadius).toBeGreaterThan(maxOrdinaryTrunkRadius);
+      expect(tree.canopyRadius).toBeGreaterThan(maxOrdinaryCanopyRadius);
+    }
+  });
+
+  it('places towering trees in the outer half of the forest, well clear of every other tree', () => {
+    const world = generateForest();
+    const ordinary = ordinaryTreesOf(world);
+    const towering = toweringTreesOf(world);
+    const origin = { x: 0, y: 0, z: 0 };
+
+    for (const tree of towering) {
+      const radial = distance2D(origin, tree.position);
+      expect(radial).toBeGreaterThanOrEqual(world.config.areaRadius / 2);
+      expect(radial).toBeLessThanOrEqual(world.config.areaRadius + 1e-6);
+
+      for (const other of ordinary) {
+        expect(distance2D(tree.position, other.position))
+          .toBeGreaterThanOrEqual(world.config.minSpacing);
+      }
+    }
+
+    // Well apart from each other — a loose bound, not a tuned exact spacing.
+    for (let i = 0; i < towering.length; i += 1) {
+      for (let j = i + 1; j < towering.length; j += 1) {
+        expect(distance2D(towering[i].position, towering[j].position))
+          .toBeGreaterThanOrEqual(4 * world.config.minSpacing);
+      }
+    }
+  });
+
+  it('freezes TOWERING_TREE_CONFIG and defaults to 4 towering trees', () => {
+    expect(Object.isFrozen(TOWERING_TREE_CONFIG)).toBe(true);
+    expect(TOWERING_TREE_CONFIG.count).toBe(4);
   });
 });

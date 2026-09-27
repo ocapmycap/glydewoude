@@ -32,6 +32,10 @@ import { distance2D, nearestTree } from '@glidewood/shared';
  * keep the loop going.
  */
 export function treeCatches(tree, position) {
+  // Towering trees have no perch to climb to (clinging to the trunk is
+  // LAN-554). perchY is null on them, so this has to be explicit rather
+  // than relying on `position.y > null` coercing null to 0.
+  if (tree.towering) return false;
   if (position.y > tree.perchY || position.y < tree.minCatchY) return false;
   const horizontal = distance2D(tree.position, position);
   const inCanopy = position.y >= tree.perchY - tree.canopyDepth;
@@ -49,8 +53,10 @@ export function treeCatches(tree, position) {
  */
 export function resolveLanding(world, previous, next, fromTreeId = null) {
   if (next.y <= world.config.groundY) {
-    // Ground contact is a soft reset: climb whatever is closest.
-    const tree = nearestTree(world.trees, next) ?? world.trees[0];
+    // Ground contact is a soft reset: climb whatever is closest. Towering
+    // trees cannot be climbed, so they are excluded from the search.
+    const climbable = world.trees.filter((candidate) => !candidate.towering);
+    const tree = nearestTree(climbable, next) ?? climbable[0] ?? world.trees[0];
     return { tree, reason: 'ground' };
   }
 

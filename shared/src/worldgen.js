@@ -10,7 +10,9 @@
  * Pure — imports nothing from the client and touches no Three.js.
  */
 
-import { TREE_TYPES, WORLD_CONFIG, STRUCTURE_KINDS, PUZZLE_CONFIG } from './constants.js';
+import {
+  TREE_TYPES, WORLD_CONFIG, STRUCTURE_KINDS, PUZZLE_CONFIG, TOWERING_TREE_CONFIG,
+} from './constants.js';
 import { createRng, hashSeed, randRange, randPick } from './rng.js';
 import { distance2D } from './math.js';
 import { deriveGlideProfile, maxGlideRange } from './glide.js';
@@ -25,7 +27,7 @@ import { deriveGlideProfile, maxGlideRange } from './glide.js';
  * @property {number} trunkHeight
  * @property {number} trunkRadius
  * @property {number} canopyRadius
- * @property {number} perchY        altitude of the launch branch
+ * @property {?number} perchY       altitude of the launch branch; null on a towering tree, which has no reachable top (D-63)
  * @property {number} perchRadius   canopy radius you can drop into from above
  * @property {number} canopyDepth   how far below the perch the canopy catches you
  * @property {number} catchRadius   trunk grab radius, below the canopy
@@ -35,6 +37,8 @@ import { deriveGlideProfile, maxGlideRange } from './glide.js';
  *   Drawing only — nothing in landing or glide reads this.
  * @property {?{targetTreeId:string, rings:Array<{center:{x:number,y:number,z:number}, normal:{x:number,y:number,z:number}, radius:number}>}} course
  *   Set only on TREE_TYPES.PUZZLE trees; null everywhere else.
+ * @property {boolean} towering
+ *   True for the handful of giants placed by placeToweringTrees (LAN-553).
  */
 
 const LANDMARK_NAMES = [
@@ -70,6 +74,7 @@ function makeTree(id, spec, config) {
     minCatchY: spec.position.y + spec.trunkHeight * config.minCatchHeightFraction,
     structures: [],
     course: null,
+    towering: false,
   };
 }
 
@@ -298,6 +303,68 @@ function placePuzzleCourses(trees, seed) {
 }
 
 /**
+ * Scatter a handful of towering trees in the outer half of the forest —
+ * landmarks visible from anywhere, and (LAN-554) something you cling to the
+ * side of rather than perch on. Their tops are out of reach by design, so
+ * `perchY` is null and they carry no structures, course or material cache.
+ *
+ * Runs on its own salted rng stream, after every ordinary tree and every
+ * puzzle course is settled, exactly like `placePuzzleCourses` — drawing from
+ * the main stream here would shift every position, height and destination
+ * roll that came before it. Trees are appended, never inserted, so the
+ * ordinary forest stays byte-for-byte identical whether or not this pass
+ * runs at all.
+ */
+function placeToweringTrees(trees, seed, config) {
+  const rng = createRng((seed ^ TOWERING_TREE_CONFIG.seedSalt) >>> 0);
+  const innerRadius = config.areaRadius * TOWERING_TREE_CONFIG.minRimFraction;
+  const separation = config.areaRadius * TOWERING_TREE_CONFIG.separationFraction;
+  const [, tallestOrdinaryTrunk] = config.trunkHeightRange;
+  const [, widestOrdinaryTrunk] = config.trunkRadiusRange;
+  const [, widestOrdinaryCanopy] = config.canopyRadiusRange;
+
+  const placed = [];
+  for (
+    let attempt = 0;
+    attempt < TOWERING_TREE_CONFIG.placementAttempts && placed.length < TOWERING_TREE_CONFIG.count;
+    attempt += 1
+  ) {
+    // Even distribution across the outer annulus — the same square-root
+    // trick scatterPositions uses for the full disc, just bounded below.
+    const radiusSq = innerRadius * innerRadius
+      + rng() * (config.areaRadius * config.areaRadius - innerRadius * innerRadius);
+    const radius = Math.sqrt(radiusSq);
+    const angle = rng() * Math.PI * 2;
+    const candidate = { x: Math.cos(angle) * radius, y: 0, z: Math.sin(angle) * radius };
+
+    const tooCloseToOrdinary = trees.some(
+      (tree) => distance2D(tree.position, candidate) < config.minSpacing,
+    );
+    const tooCloseToTowering = placed.some(
+      (tree) => distance2D(tree.position, candidate) < separation,
+    );
+    if (tooCloseToOrdinary || tooCloseToTowering) continue;
+
+    const tree = makeTree(
+      `tree-towering-${placed.length}`,
+      {
+        type: TREE_TYPES.SCENERY,
+        position: candidate,
+        trunkHeight: randRange(rng, ...TOWERING_TREE_CONFIG.heightFactorRange) * tallestOrdinaryTrunk,
+        trunkRadius: randRange(rng, ...TOWERING_TREE_CONFIG.radiusFactorRange) * widestOrdinaryTrunk,
+        canopyRadius: randRange(rng, ...TOWERING_TREE_CONFIG.canopyFactorRange) * widestOrdinaryCanopy,
+      },
+      config,
+    );
+    // No perch to launch from or land on, ever (D-63); minCatchY and
+    // catchRadius stay numeric so LAN-554 can catch the trunk from the side.
+    placed.push({ ...tree, perchY: null, towering: true });
+  }
+
+  return placed;
+}
+
+/**
  * Build the forest.
  *
  * @param {Partial<typeof WORLD_CONFIG>} [overrides]
@@ -365,7 +432,11 @@ export function generateForest(overrides = {}) {
 
   // Puzzle course selection is a separate pass on a separately salted rng —
   // see placePuzzleCourses for why it cannot share the stream above.
-  const finalTrees = placePuzzleCourses(treesWithStructures, seed);
+  const puzzledTrees = placePuzzleCourses(treesWithStructures, seed);
+
+  // Towering trees are appended last, on their own salted rng stream, after
+  // the ordinary forest is entirely settled — see placeToweringTrees.
+  const finalTrees = [...puzzledTrees, ...placeToweringTrees(puzzledTrees, seed, config)];
 
   return {
     seed,

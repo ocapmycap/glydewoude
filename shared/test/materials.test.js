@@ -68,9 +68,13 @@ describe('generateMaterialCaches', () => {
   });
 
   it('honours a cacheChance override', () => {
+    // Narrowed to ordinary trees (LAN-553): towering trees never carry a
+    // cache (see the 'towering trees' describe block below), so a
+    // cacheChance of 1 no longer covers every tree but the spawn.
+    const ordinaryCount = world.trees.filter((tree) => !tree.towering).length;
     expect(generateMaterialCaches(world, { cacheChance: 0 })).toHaveLength(0);
     expect(generateMaterialCaches(world, { cacheChance: 1 }).length)
-      .toBe(world.trees.length - 1);
+      .toBe(ordinaryCount - 1);
   });
 
   it('copes with an empty forest', () => {
@@ -179,5 +183,53 @@ describe('indexCachesByTree', () => {
     const index = indexCachesByTree(caches);
     expect(index.size).toBe(caches.length);
     expect(index.get(caches[0].treeId)).toBe(caches[0]);
+  });
+});
+
+describe('towering trees (LAN-553)', () => {
+  /** Tiny FNV-1a, mirroring the one pinned in shared/test/worldgen.test.js. */
+  function fnv1a(text) {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < text.length; i += 1) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return hash >>> 0;
+  }
+
+  const round = (n) => Math.round(n * 1e6) / 1e6;
+
+  // Pinned against the code as it existed immediately before LAN-553, from
+  // generateMaterialCaches(generateForest()) with the default seed: 88
+  // caches, fingerprinted as `id|treeId|material|amount|effort|x|y|z`
+  // (numbers rounded to 1e-6) and folded with the FNV-1a above. Towering
+  // trees never carry a cache, so this must hold forever, not just today.
+  const PINNED_CACHE_COUNT = 88;
+  const PINNED_CACHES_HASH = 3517561366;
+
+  it('leaves every existing material cache byte-for-byte identical', () => {
+    expect(caches.length).toBe(PINNED_CACHE_COUNT);
+    const fingerprint = caches
+      .map((c) => `${c.id}|${c.treeId}|${c.material}|${c.amount}|${round(c.effort)}|${round(c.position.x)}|${round(c.position.y)}|${round(c.position.z)}`)
+      .join('\n');
+    expect(fnv1a(fingerprint)).toBe(PINNED_CACHES_HASH);
+  });
+
+  it('never places a cache on a towering tree, even at cacheChance 1', () => {
+    // A hand-built world, not the real forest — this has to hold however
+    // rarely towering trees roll a cache in the real forest.
+    const testWorld = {
+      seed: 1234,
+      spawnTreeId: 'tree-spawn',
+      trees: [
+        { id: 'tree-spawn', towering: false, perchY: 46, position: { x: 0, y: 0, z: 0 } },
+        { id: 'tree-ordinary', towering: false, perchY: 20, position: { x: 40, y: 0, z: 0 } },
+        { id: 'tree-towering', towering: true, perchY: null, position: { x: 200, y: 0, z: 0 } },
+      ],
+    };
+
+    const testCaches = generateMaterialCaches(testWorld, { cacheChance: 1 });
+    expect(testCaches.some((cache) => cache.treeId === 'tree-towering')).toBe(false);
+    expect(testCaches.some((cache) => cache.treeId === 'tree-ordinary')).toBe(true);
   });
 });

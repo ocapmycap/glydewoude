@@ -1044,3 +1044,49 @@ preallocated buffers without allocating.
 Lines stay one pixel wide at any distance, which gives "thin" without a
 camera-facing ribbon. Recycling marks the camera has outrun keeps the density
 steady at glide speed.
+
+## D-63 — "Towering" trees, with `perchY: null` meaning "no reachable top"
+
+**Ambiguity.** LAN-553 asks for "headless" trees: giants whose tops you can
+never reach. "Headless" already means "runs without a browser" here, and the
+issue leaves open how landing code should tell that a tree has no perch.
+
+**Decision.** In code they are **towering** trees: `tree.towering === true`
+on the giants, `false` on every other tree. A towering tree has
+`perchY: null`; `minCatchY` and `catchRadius` stay numeric so LAN-554 can
+catch the trunk from the side. They are `TREE_TYPES.SCENERY`, never
+destinations, and carry no structures, course or material cache. Until
+LAN-554 adds clinging, `treeCatches` returns `false` for them explicitly, and
+the ground-contact reset in `landing.js` only picks ordinary trees.
+`materialEffortScale` ignores them, so every cache's effort is unchanged.
+Until LAN-555 draws them, `client/src/render/trees.js` leaves them out of the
+instanced forest, because its canopy placement is computed from `perchY`.
+
+**Reasoning.** One searchable word per meaning. A `null` perch fails loudly in
+arithmetic instead of pretending to be a height, which is what we want for
+any code that has not considered towering trees yet. For now they are
+invisible and do not catch the squirrel, so a player cannot run into
+something they cannot see.
+
+## D-64 — Four towering trees on their own salted stream, in the outer half
+
+**Ambiguity.** How many, how big, and where. LAN-553 set defaults without a
+human, and the existing forest must not move.
+
+**Decision.** `TOWERING_TREE_CONFIG` in `shared/src/constants.js`: 4 trees;
+trunk height 2.5–3.5 × `trunkHeightRange[1]` (85–119 m, against the great
+tree's 46 m); trunk radius 2–3 × `trunkRadiusRange[1]`; canopy radius 2–2.5 ×
+`canopyRadiusRange[1]`. Positions are drawn evenly over the annulus from
+0.5 × to 1 × `areaRadius`. Each is at least `minSpacing` from every ordinary
+tree and at least 0.5 × `areaRadius` (130 m) from every other towering tree,
+with up to 4000 attempts (fewer trees if they do not fit). They come from
+`createRng((seed ^ 0x2545f491) >>> 0)` after puzzle courses are placed, and
+are appended to the end of `world.trees` with ids `tree-towering-N`. Tests
+pin a hash of the default world's first 187 trees and of all its caches,
+taken before this change.
+
+**Reasoning.** A separate salted stream appended last is the pattern
+puzzle courses already use (LAN-546). It is the only way to leave every
+existing id, position and cache untouched. The outer half keeps them away from
+the spawn clearing. 130 m of separation spreads four trees around the rim, so
+they frame the forest instead of clustering.

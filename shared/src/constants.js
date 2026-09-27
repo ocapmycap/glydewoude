@@ -214,3 +214,36 @@ export const PUZZLE_CONFIG = Object.freeze({
   /** Seed offset, so puzzle selection does not disturb the main worldgen stream. */
   seedSalt: 0x51ed270b,
 });
+
+/**
+ * Towering tree placement dials (LAN-553).
+ *
+ * A handful of trees dwarfing everything else in the forest — landmarks
+ * visible from anywhere, and (LAN-554) something you cling to the trunk of
+ * rather than perch on. Kept apart from
+ * WORLD_CONFIG the same way PUZZLE_CONFIG is: these numbers decide how many
+ * giants spawn and how big they are, never how an ordinary tree is scattered
+ * or shaped.
+ */
+export const TOWERING_TREE_CONFIG = Object.freeze({
+  /** How many towering trees the default world gets. */
+  count: 4,
+  /** Trunk height as a multiple of WORLD_CONFIG.trunkHeightRange[1] — always taller than every ordinary trunk. */
+  heightFactorRange: [2.5, 3.5],
+  /** Trunk radius as a multiple of WORLD_CONFIG.trunkRadiusRange[1]. */
+  radiusFactorRange: [2, 3],
+  /** Canopy radius as a multiple of WORLD_CONFIG.canopyRadiusRange[1] — high and wide. */
+  canopyFactorRange: [2, 2.5],
+  /** Placed no closer to the centre than this fraction of areaRadius — the outer half of the forest. */
+  minRimFraction: 0.5,
+  /**
+   * Minimum distance between two towering trees, as a fraction of areaRadius.
+   * Generous on purpose (~half the forest's radius) so the giants read as
+   * scattered landmarks rather than a cluster.
+   */
+  separationFraction: 0.5,
+  /** How hard to try before accepting fewer than `count` fit. */
+  placementAttempts: 4000,
+  /** Seed offset, so towering placement does not disturb the worldgen or puzzle streams. */
+  seedSalt: 0x2545f491,
+});
