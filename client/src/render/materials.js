@@ -26,6 +26,9 @@ export const PALETTE = Object.freeze({
   groundDeep: 0x4e7a3e,
   bark: 0x6b4a34,
   barkGreat: 0x7d5940,
+  // Towering trees (towering-trees.js): darker and cooler than any ordinary
+  // bark, so the giants read as older and further off (D-67).
+  barkTowering: 0x4e4642,
   // Structures (structures.js): lighter and greyer than trunk bark, so a
   // planked platform reads as built rather than as more tree.
   plank: 0xa9835a,

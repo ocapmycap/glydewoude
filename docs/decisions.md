@@ -1172,3 +1172,64 @@ caught the tree and can push off again, but there was never a branch to
 arrive at. Reusing `launchMotion` rather than inventing a second launch path
 keeps the one place that owns "how fast does a push-off start" — no new
 tuning dial for a cling's hop.
+
+## D-67 — Towering trees: straight where you can cling, hazed toward the fog above
+
+**Ambiguity.** LAN-555 set the look (darker, cooler bark with a slight taper;
+a high, wide canopy; fog softening the upper trunk) without a human. Three
+things were left open. A taper moves the bark inward, but `clingPoint` always
+puts the squirrel exactly `trunkRadius` from the centre. The scene fog is
+linear by distance, so on its own it barely touches the top of a trunk 150 m
+away. And the dark inverted-hull outline would make the top end sharply
+whatever the fog does.
+
+**Decision.** Towering trees get their own module,
+`client/src/render/towering-trees.js`, called from `createForest` with the
+forest's shared bark texture and canopy geometry. There are four instanced
+meshes for all of them: trunk, trunk hull, canopy and canopy hull. The trunk
+keeps its full `trunkRadius` for the bottom 55% and tapers to 62% at the top.
+Nothing launches higher than the great tree's 46 m perch, and every towering
+trunk is at least 85 m tall (D-64), so the taper never reaches bark a
+squirrel can touch. It also uses 16 sides rather than 7, so the flats stay
+close to the circle the cling point is set on. The bark is
+`PALETTE.barkTowering` (a cool grey-brown). Above 35% of the height, both the
+bark and its outline blend toward `PALETTE.fog`, reaching 72% fog at the top.
+This is baked into vertex colours, so the fade works however the scene fog is
+set. The canopy is five wide, flat blobs centred on the top of the trunk, 42%
+of the way to fog, with a hull 60% of the way to fog. No scene-wide change
+to the fog was made.
+
+**Reasoning.** Keeping the reachable trunk straight means clinging needs no
+render-side knowledge of sim geometry, and no change to `clingPoint`. Vertex
+colours give a height fade without a custom shader, which is reserved for the
+Phase 4 art pass (§5.1), and cost no extra draw calls. If a height fog is
+added later, the vertex haze can be turned down rather than removed.
+
+## D-68 — Cling pose in a child group, and a side-on cling camera
+
+**Ambiguity.** The squirrel mesh had no limbs, and its root's rotation
+belongs to the renderer (heading, flight pitch, bank). LAN-555 also asked the
+camera to "pull back and out from the trunk, looking past the squirrel along
+the direction it will launch". Read literally, that puts the camera inside
+the trunk, because the squirrel faces the bark and the launch line runs
+straight back through where a chase camera sits.
+
+**Decision.** All squirrel parts now hang off a child `pose` group.
+`squirrel.update(spread, bank, clinging)` eases it through a quarter turn so
+the nose points up the trunk and the belly faces the bark, flattens it across
+the back to 72%, and shifts it so the belly meets the bark at the root
+(which the sim places on the trunk surface). The membranes hide, and four
+small leg boxes, hidden at all other times, show splayed diagonally on the
+bark. The renderer drops the perch's 0.55 m lift while clinging.
+`followCamera.update` now takes the glider phase instead of a `gliding`
+boolean. While clinging it sits 8 m to the squirrel's right, 1 m clear of the
+bark and 3 m up, and looks 4 m out along the launch line and 2.5 m down. That
+keeps the camera outside the trunk and the squirrel in frame, while turning
+the view toward the jump.
+
+**Reasoning.** A child group composes the cling in the squirrel's own frame,
+whatever the heading, so the renderer's Euler order and pitch logic are
+untouched. A side-on camera is the nearest framing to "looking past the
+squirrel" that is neither occluded by the trunk nor loses the squirrel
+off-screen. `CLINGING` in `follow-camera.js` is the dial to change after a
+playtest.

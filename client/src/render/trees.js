@@ -7,6 +7,8 @@
  * happens to be in someone's hand, and the doc expects traffic spikes (§10).
  * The great tree (the spawn landmark) is drawn separately in great-tree.js —
  * it is unique, so it can afford its own mesh instead of an instance slot.
+ * Towering trees get their own pass in towering-trees.js, because their
+ * canopy hangs off the top of the trunk rather than a perch.
  *
  * Detail is added without adding draw calls: bark grain is one shared canvas
  * texture, leaf tufts are extra instances of the canopy mesh, and per-tree
@@ -29,6 +31,7 @@ import { createRng, hashSeed, randRange } from '@glidewood/shared';
 
 import { PALETTE, mixColor, outlineMaterial, toonMaterial } from './materials.js';
 import { createGreatTree } from './great-tree.js';
+import { createToweringTrees } from './towering-trees.js';
 
 /** How much bigger the inverted hull is than the mesh it outlines. */
 const OUTLINE_SCALE = 1.035;
@@ -191,11 +194,12 @@ export function createForest(world) {
   const group = new Group();
   group.name = 'forest';
 
-  // The great tree draws itself; everything else is instanced. Towering
-  // trees have no perch (perchY: null), which would NaN every canopy
-  // position computed below — LAN-555 gives them their own draw pass.
+  // The great tree and the towering trees draw themselves. Towering trees
+  // have no perch (perchY: null), which would NaN every canopy position
+  // computed below.
   const trees = world.trees.filter((tree) => tree.id !== world.spawnTreeId && !tree.towering);
   const greatTree = world.trees.find((tree) => tree.id === world.spawnTreeId);
+  const toweringTrees = world.trees.filter((tree) => tree.towering);
 
   const trunkGeometry = new CylinderGeometry(0.75, 1, 1, 7, 1);
   // Detail 0 keeps the canopy a faceted low-poly blob rather than a ball.
@@ -267,6 +271,7 @@ export function createForest(world) {
   group.add(trunkOutlines, canopyOutlines, trunks, canopies);
 
   if (greatTree) group.add(createGreatTree(greatTree, { barkTexture }));
+  group.add(createToweringTrees(toweringTrees, { barkTexture, canopyGeometry }));
 
   return group;
 }

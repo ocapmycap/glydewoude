@@ -85,16 +85,23 @@ export function createRenderer(canvas, world) {
     render(glider, dt) {
       const { motion } = glider;
       const gliding = glider.phase === 'gliding';
+      // A cling's position is a point on the bark, not a branch to stand
+      // on, so it skips the perch's lift and lets the pose meet the trunk.
+      const clinging = glider.phase === 'clinging';
 
-      squirrel.object.position.set(motion.x, motion.y + (gliding ? 0 : 0.55), motion.z);
+      squirrel.object.position.set(motion.x, motion.y + (gliding || clinging ? 0 : 0.55), motion.z);
       squirrel.object.rotation.y = motion.heading;
       // Pitch the nose along the flight path, and bank into the turn.
       squirrel.object.rotation.x = gliding
         ? MathUtils.clamp(Math.atan2(motion.vy, Math.max(motion.speed, 1)), -0.9, 0.6)
         : 0;
-      squirrel.update(gliding ? 1 : 0, gliding ? MathUtils.clamp(motion.yawRate * 0.55, -0.8, 0.8) : 0);
+      squirrel.update(
+        gliding ? 1 : 0,
+        gliding ? MathUtils.clamp(motion.yawRate * 0.55, -0.8, 0.8) : 0,
+        clinging,
+      );
 
-      followCamera.update(motion, gliding, dt);
+      followCamera.update(motion, glider.phase, dt);
       renderer.render(scene, camera);
     },
 
