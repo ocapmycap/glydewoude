@@ -57,6 +57,10 @@ to deploy in Phase 1.
 | Click the canvas | Steer with the mouse instead (pointer lock; <kbd>Esc</kbd> releases) |
 | <kbd>R</kbd> | Return to the great oak |
 | <kbd>T</kbd> | Show or hide the glide tuning dials |
+| Gamepad left stick | Steer; push forward to dive, pull back to flare |
+| Gamepad <kbd>A</kbd> | Launch from the branch |
+| Gamepad <kbd>Y</kbd> | Open or close the shop |
+| Gamepad <kbd>Back</kbd> / <kbd>Select</kbd> | Return to the great oak |
 
 **The one thing that is not obvious:** a glide only ever loses height. You get
 it back by flying *into* a tall tree — catch the trunk anywhere on its upper

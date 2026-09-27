@@ -959,3 +959,48 @@ concern. Events arrive in order, so a failure followed by a re-arm on the
 same landing (D-53) hides and then shows the right course. With at most three
 courses of three rings, building them all up front costs less than a stall on
 the frame a trial arms.
+
+## D-59 — Gamepad mapping: standard layout, forward-is-dive, dead zone 0.15
+
+**Ambiguity.** LAN-551 asks for gamepad support but the product doc doesn't
+pin down which axes and buttons map to what, or how a dead zone should be
+applied.
+
+**Decision.** Only the Standard Gamepad layout is read, and only the first
+connected pad reporting it — other pads and non-standard layouts are ignored
+rather than guessed at. Axis 0 is steer, right positive, matching the sim's
+sign. Axis 1 is pitch, used as-is: the browser reports pushing the stick
+forward as negative, and forward already means dive (negative pitch) in this
+game's convention, so no inversion is needed. Button 0 (A) is launch, button
+3 (Y) is toggleShop, button 8 (Back/Select) is respawn, all in a frozen index
+table. Deflection inside `GAMEPAD_DEAD_ZONE` (0.15) reads as zero; past it,
+the remaining travel is rescaled so full deflection still reaches +-1.
+
+**Reasoning.** Standard-only keeps the mapping honest — anything else would
+be guessing at unlabelled axes. Matching the existing dive/pitch sign
+convention (`W` = dive in `ui/input.js`) means the stick
+"just works" instead of needing a per-control inversion the player has to
+learn. Rescaling past the dead zone keeps precision at the extremes instead
+of leaving a dead band the player can feel.
+
+## D-60 — Precedence keys > stick > mouse; buttons are press-edge; polled once per step
+
+**Ambiguity.** With three simultaneous input sources it isn't obvious which
+should win when more than one is active at once, or how often the gamepad
+should be read against the fixed-timestep loop it feeds.
+
+**Decision.** `sync(dt)` resolves steer and pitch in the order keys, then
+gamepad stick, then mouse drift — each only fills in a zero left by the one
+before it. Gamepad buttons fire on the press edge only, using the previous
+poll's held state, so holding launch doesn't repeat it every step. The pad is
+polled exactly once per `sync` call, i.e. once per fixed step; a press
+shorter than the gap between two polls could be missed entirely.
+
+**Reasoning.** Keys are digital and deliberate, so they should never be
+fought by an idle stick sitting slightly off-centre; the stick is likewise a
+more explicit signal than ambient mouse drift while pointer-locked, so it
+goes next. Press-edge buttons match how the keyboard's `event.repeat` guard
+already behaves, keeping the two input paths consistent. Polling once per
+step is the same cadence every other input source already runs at; a missed
+sub-step press is an acceptable trade against reading raw browser state at a
+different rate than the simulation advances.

@@ -6,12 +6,18 @@
  * by hand, so the simulation never learns whether a human or a test is flying.
  *
  * Controls (§2.2 asks for mouse-look or arrow keys; both are wired):
- *   A / D / left / right   steer
- *   W / S / up / down      dive / flare
- *   mouse (after clicking) steer and pitch, via pointer lock
- *   space                  launch
- *   R                      return to the great tree
+ *   A / D / left / right    steer
+ *   W / S / up / down       dive / flare
+ *   mouse (after clicking)  steer and pitch, via pointer lock
+ *   space                   launch
+ *   R                       return to the great tree
+ *   gamepad left stick      steer / pitch (forward = dive)
+ *   gamepad A               launch
+ *   gamepad Y               toggle shop
+ *   gamepad Back / Select   return to the great tree
  */
+
+import { createGamepadReader } from './gamepad.js';
 
 const STEER_KEYS = { KeyA: -1, ArrowLeft: -1, KeyD: 1, ArrowRight: 1 };
 const PITCH_KEYS = { KeyW: -1, ArrowUp: -1, KeyS: 1, ArrowDown: 1 };
@@ -25,6 +31,8 @@ export function createInputBindings(input, canvas, { onToggleTuning, onToggleSho
   let mouseSteer = 0;
   let mousePitch = 0;
   let pointerLocked = false;
+  // Guarded because browsers without the Gamepad API have no getGamepads.
+  const gamepad = createGamepadReader(() => navigator.getGamepads?.() ?? []);
 
   function onKeyDown(event) {
     if (event.repeat) return;
@@ -86,17 +94,26 @@ export function createInputBindings(input, canvas, { onToggleTuning, onToggleSho
         pitch += PITCH_KEYS[code] ?? 0;
       }
 
+      // Precedence: keys (digital, most precise) beat the stick (analogue,
+      // explicit) beat the mouse (ambient drift while pointer-locked).
+      const pad = gamepad.poll();
+      if (steer === 0) steer = pad.steer;
+      if (pitch === 0) pitch = pad.pitch;
+
       if (pointerLocked) {
         const decay = Math.exp(-MOUSE_DECAY * dt);
         mouseSteer *= decay;
         mousePitch *= decay;
-        // Keys win when both are active, so the keyboard always feels precise.
         if (steer === 0) steer = mouseSteer;
         if (pitch === 0) pitch = mousePitch;
       }
 
       input.steer = clamp(steer, -1, 1);
       input.pitch = clamp(pitch, -1, 1);
+
+      if (pad.launch) input.launch = true;
+      if (pad.respawn) input.respawn = true;
+      if (pad.toggleShop) onToggleShop?.();
     },
 
     get pointerLocked() {
