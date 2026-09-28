@@ -20,10 +20,22 @@ import { createRenderer } from './render/renderer.js';
 import { createInputBindings } from './ui/input.js';
 import { createHud } from './ui/hud.js';
 import { createTuningPanel } from './ui/tuning-panel.js';
+import { createHelpPanel } from './ui/help-panel.js';
 import { createShop } from './ui/shop.js';
 import { createRunHud } from './ui/run-hud.js';
 import { createLeafBurst } from './render/leaf-burst.js';
 import { createMilestoneBurst } from './ui/milestone-burst.js';
+import { createRings } from './render/rings.js';
+import { createWind } from './render/wind.js';
+import { createButterflies } from './render/butterflies.js';
+import { createPuzzlePrompt } from './ui/puzzle-prompt.js';
+import {
+  createTreeLabels, isPuzzleTree, labelAnchor, labelFontPx, labelText, labelledTrees, treeLabelState,
+} from './ui/tree-labels.js';
+import { createBeacons } from './render/beacons.js';
+import {
+  PUZZLE_POINTER, createPuzzlePointer, edgePointer, nearestPuzzleTree, pointerText,
+} from './ui/puzzle-pointer.js';
 
 import './style.css';
 
@@ -80,11 +92,34 @@ const runSync = createRunSync({ session, simulation });
 
 const hud = createHud(overlay, simulation);
 const tuning = createTuningPanel(overlay, simulation);
+const help = createHelpPanel(overlay);
 const shop = createShop(overlay, { session, simulation });
 createRunHud(overlay, { simulation, runSync });
+
+// Named trees and their world anchors never change after worldgen, so this
+// is computed once rather than every frame the labels are shown.
+const treeLabels = createTreeLabels(overlay);
+const labelledWorldTrees = labelledTrees(world.trees).map((tree) => (
+  { tree, anchor: labelAnchor(tree) }
+));
+
+// Puzzle trees never change after worldgen either, so the off-screen pointer
+// (LAN-578) filters once here rather than every render frame.
+const puzzleTrees = world.trees.filter(isPuzzleTree);
+const puzzlePointer = createPuzzlePointer(overlay);
+// True between 'puzzle:armed' and the trial's end, so the pointer and the
+// beacon agree on when a trial is in play. A trial can already be armed on
+// the spawn tree before any listener exists (createPuzzleTrial arms it in
+// createSimulation), so this starts from the simulation's own state rather
+// than assuming nothing is armed yet.
+let trialArmed = simulation.puzzle.trial != null;
+
 const bindings = createInputBindings(input, canvas, {
   onToggleTuning: () => tuning.toggle(),
   onToggleShop: () => shop.toggle(),
+  onToggleLabels: () => treeLabels.toggle(),
+  onToggleHelp: () => help.toggle(),
+  onCloseHelp: () => help.close(),
 });
 
 // The opening hint stays up until the player takes their first launch.
@@ -110,6 +145,42 @@ const loop = createLoop({
     // as the camera's delta keeps the chase cam smooth on high-refresh
     // displays without the simulation itself ever running at a variable rate.
     renderer.render(simulation.glider, (1 / 60) * (1 + alpha));
+
+    // Skip the projection work entirely while hidden — most frames, since
+    // labels are off by default.
+    if (treeLabels.shown) {
+      treeLabels.update(labelledWorldTrees.map(({ tree, anchor }) => {
+        const projected = renderer.projectToScreen(anchor);
+        return {
+          ...treeLabelState(tree, projected),
+          text: labelText(tree),
+          fontPx: labelFontPx(projected.distance),
+          puzzle: isPuzzleTree(tree),
+        };
+      }));
+    }
+
+    // The off-screen puzzle pointer runs whether or not labels are toggled
+    // on (LAN-578) — unlike a label, it only ever appears when there is
+    // somewhere off screen worth pointing at.
+    const nearest = nearestPuzzleTree(puzzleTrees, simulation.glider.motion);
+    if (!nearest || trialArmed || nearest.distance < PUZZLE_POINTER.arriveDistance) {
+      puzzlePointer.hide();
+    } else {
+      const projected = renderer.projectToScreen(labelAnchor(nearest.tree));
+      const edge = edgePointer(projected, { width: overlay.clientWidth, height: overlay.clientHeight });
+      if (edge.onScreen) {
+        puzzlePointer.hide();
+      } else {
+        puzzlePointer.update({
+          visible: true,
+          x: edge.x,
+          y: edge.y,
+          angle: edge.angle,
+          text: pointerText(nearest.tree.name, nearest.distance),
+        });
+      }
+    }
   },
 });
 
@@ -122,3 +193,38 @@ simulation.on((event) => event.type === 'glide:landed' && event.reason === 'perc
 
 // A brief "Chain of 5!" whenever a run reaches a milestone.
 createMilestoneBurst(overlay, simulation);
+
+// Ring trials (LAN-549). The simulation decides every pass and failure; the
+// rings are only told which course is armed and which ring index was passed.
+// A respawn while armed but not yet launched clears the trial without a
+// puzzle event, so it hides the rings too; any re-arm follows it.
+const rings = createRings(renderer.scene, world);
+// The beacon above a puzzle tree (LAN-578) hides while that tree's own trial
+// is armed, so it never sits lit up in the middle of the rings it just
+// vacated for. The spawn tree's trial can be armed before this listener
+// exists (see `trialArmed` above), so its beacon starts hidden too.
+const beacons = createBeacons(renderer.scene, world);
+if (simulation.puzzle.trial) beacons.hide(simulation.puzzle.trial.treeId);
+simulation.on((event) => {
+  if (event.type === 'puzzle:armed') {
+    rings.show(event.tree.id);
+    beacons.hide(event.tree.id);
+    trialArmed = true;
+  } else if (event.type === 'puzzle:ring') {
+    rings.pass(event.index);
+  } else if (['puzzle:solved', 'puzzle:failed', 'glide:respawned'].includes(event.type)) {
+    rings.hide();
+    beacons.showAll();
+    trialArmed = false;
+  }
+});
+createPuzzlePrompt(overlay, simulation);
+
+// Streaks and leaves drifting on the wind near the camera. Visual only: the
+// simulation never hears about it (D-61).
+createWind(renderer.scene, world);
+
+// Butterflies fluttering near the camera (LAN-574). Visual only, like wind;
+// they read the glider state the renderer draws so a group can scatter from
+// the squirrel (D-76).
+createButterflies(renderer.scene, world, { glider: () => simulation.glider });

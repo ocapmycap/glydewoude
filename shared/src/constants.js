@@ -67,6 +67,21 @@ export const GLIDE_TUNING = Object.freeze({
   /** Clamps, purely defensive. */
   minSpeed: 0,
   maxSpeed: 40,
+
+  /** Speed scampering up a trunk after a climb-triggering catch (m/s). */
+  climbSpeed: 8,
+  /**
+   * Shortest a climb may take (s), however close the catch already was to the
+   * perch. Without a floor a canopy catch a few centimetres below the perch
+   * would finish in a single tick — a teleport with extra math, not a climb
+   * (LAN-579).
+   */
+  minClimbDuration: 0.3,
+
+  /** Turn rate spinning on the spot while perched (rad/s). */
+  perchTurnRate: 2.5,
+  /** How long the back-tap about-face takes, so the camera sweeps rather than cuts (s). */
+  aboutFaceDuration: 0.4,
 });
 
 /** Default forest layout. One small area — Phase 1 is a single zone. */
@@ -186,3 +201,88 @@ export const RUN_TUNING = Object.freeze({
 
 /** Decorations worldgen tucks into destination canopies (LAN-520). Drawing only; landing ignores them. */
 export const STRUCTURE_KINDS = Object.freeze({ DREY: 'drey', PLATFORM: 'platform' });
+
+/**
+ * Puzzle tree course dials (LAN-546).
+ *
+ * Kept apart from GLIDE_TUNING the same way BASE_GLIDE_STATS is: these
+ * numbers decide which trees get a course and how tight it is, never how the
+ * squirrel actually flies. worldgen consults them when choosing puzzle trees
+ * and shaping their rings; nothing in glide.js or the sim's step functions
+ * reads them.
+ */
+export const PUZZLE_CONFIG = Object.freeze({
+  /** How many destination trees become puzzle trees. */
+  treeCount: 3,
+  /** Rings per course. */
+  ringCount: 3,
+  /**
+   * Ring radius, metres. Raised from 2.5 (LAN-581): once rings sat on the
+   * real, simulated glide path instead of the straight line between the two
+   * perches, a tighter ring left no margin for the small steering corrections
+   * a neutral-pitch pilot actually needs to line one up.
+   */
+  ringRadius: 4,
+  /**
+   * Seconds per step used to simulate a candidate course's flight path.
+   * Must match client/src/sim/loop.js's FIXED_DT — a course built on a
+   * different timestep would land its rings between the points the shipped
+   * fixed-timestep sim actually samples, instead of on them (LAN-581).
+   */
+  pathStep: 1 / 60,
+  /**
+   * Horizontal distance, metres, the first ring sits from the puzzle tree —
+   * clears the launch hop and the tree's own canopy before a ring appears.
+   */
+  firstRingDistance: 15,
+  /**
+   * Horizontal distance, metres, the last ring sits short of the target —
+   * leaves room to line up the final catch after the last ring.
+   */
+  lastRingClearance: 10,
+  /**
+   * Altitude, metres, a neutral-pitch (steer 0, pitch 0) simulated glide must
+   * still clear above the target's perch at the last ring's horizontal
+   * distance. Without this slack a target could be "reachable" only by diving
+   * past the last ring, which the ring layout — meant to be flown neutral —
+   * could never actually deliver (LAN-581).
+   */
+  lastRingSlack: 2,
+  /** Minimum horizontal gap between a puzzle tree and its target, metres, so the rings between them have room to breathe. */
+  minTargetDistance: 30,
+  /** Seed offset, so puzzle selection does not disturb the main worldgen stream. */
+  seedSalt: 0x51ed270b,
+});
+
+/**
+ * Towering tree placement dials (LAN-553).
+ *
+ * A handful of trees dwarfing everything else in the forest — landmarks
+ * visible from anywhere, and (LAN-554) something you cling to the trunk of
+ * rather than perch on. Kept apart from
+ * WORLD_CONFIG the same way PUZZLE_CONFIG is: these numbers decide how many
+ * giants spawn and how big they are, never how an ordinary tree is scattered
+ * or shaped.
+ */
+export const TOWERING_TREE_CONFIG = Object.freeze({
+  /** How many towering trees the default world gets. */
+  count: 4,
+  /** Trunk height as a multiple of WORLD_CONFIG.trunkHeightRange[1] — always taller than every ordinary trunk. */
+  heightFactorRange: [2.5, 3.5],
+  /** Trunk radius as a multiple of WORLD_CONFIG.trunkRadiusRange[1]. */
+  radiusFactorRange: [2, 3],
+  /** Canopy radius as a multiple of WORLD_CONFIG.canopyRadiusRange[1] — high and wide. */
+  canopyFactorRange: [2, 2.5],
+  /** Placed no closer to the centre than this fraction of areaRadius — the outer half of the forest. */
+  minRimFraction: 0.5,
+  /**
+   * Minimum distance between two towering trees, as a fraction of areaRadius.
+   * Generous on purpose (~half the forest's radius) so the giants read as
+   * scattered landmarks rather than a cluster.
+   */
+  separationFraction: 0.5,
+  /** How hard to try before accepting fewer than `count` fit. */
+  placementAttempts: 4000,
+  /** Seed offset, so towering placement does not disturb the worldgen or puzzle streams. */
+  seedSalt: 0x2545f491,
+});

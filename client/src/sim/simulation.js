@@ -24,8 +24,19 @@ import {
 
 import { createCollectionLedger } from './collection.js';
 import { createInteractionRegistry, landmarkInteraction } from './interactions.js';
-import { GliderPhase, landOn, launch, perchOn, stepAirborne } from './glider.js';
+import {
+  GliderPhase,
+  clingTo,
+  climbFrom as climbFromGlider,
+  landOn,
+  launch,
+  perchOn,
+  stepAirborne,
+  stepClimb,
+  stepPerch,
+} from './glider.js';
 import { resolveLanding } from './landing.js';
+import { createPuzzleTrial } from './puzzle.js';
 import { createRunTracker } from './run.js';
 import { resetEdges } from './input-state.js';
 
@@ -49,6 +60,11 @@ export function createSimulation(options = {}) {
 
   const interactions = createInteractionRegistry();
   interactions.register(TREE_TYPES.LANDMARK, landmarkInteraction);
+  // A puzzle tree is still a named perch — it announces itself the same way
+  // a landmark does (D-50); `puzzle` below handles the ring trial itself.
+  interactions.register(TREE_TYPES.PUZZLE, landmarkInteraction);
+
+  const puzzle = createPuzzleTrial();
 
   const collection = createCollectionLedger({
     caches: options.caches ?? generateMaterialCaches(world),
@@ -63,11 +79,21 @@ export function createSimulation(options = {}) {
   const spawnTree = world.trees.find((tree) => tree.id === world.spawnTreeId);
   let glider = perchOn(spawnTree);
   let elapsed = 0;
+  // Edge-detected across every phase (LAN-577): a back-tap about-face fires
+  // once when pitch crosses up into flare range, not once per step it stays
+  // held. Tracking this outside PERCHED too means a flare held all the way
+  // down through a landing doesn't count as "just pressed" the moment the
+  // squirrel touches a perch.
+  let backHeld = false;
 
   const context = () => ({ glider, world, emit });
 
   // Announce the spawn perch the same way any other landing would.
   interactions.land(spawnTree, context());
+  // Arm a puzzle course on the spawn tree, if it has one. No listeners are
+  // attached yet, so these events are dropped the same way the announcement
+  // above is — a respawn later re-arms with someone actually listening.
+  puzzle.arm(spawnTree);
 
   function treeById(id) {
     return world.trees.find((tree) => tree.id === id) ?? null;
@@ -76,9 +102,11 @@ export function createSimulation(options = {}) {
   function doLaunch() {
     const from = treeById(glider.treeId);
     if (!from) return;
-    interactions.leave(from, context());
+    // A cling never fired `interactions.land`, so there is nothing to leave.
+    if (glider.phase !== GliderPhase.CLINGING) interactions.leave(from, context());
     glider = launch(glider, profile, tuning);
     emit({ type: 'glide:launched', tree: from });
+    for (const puzzleEvent of puzzle.start(from)) emit(puzzleEvent);
 
     // The first launch after a perch with no chain going opens a run; every
     // launch in the middle of one is silent.
@@ -86,9 +114,24 @@ export function createSimulation(options = {}) {
     if (started) emit(started);
   }
 
-  function doLand(tree, reason) {
+  function doLand(tree, reason, point, climbFrom) {
     const finished = glider.glide;
-    glider = landOn(glider, tree);
+
+    if (reason === 'cling') {
+      // Clinging to a towering trunk is a catch, not a landing: the chain
+      // keeps going and a puzzle in progress ends as a wrong-tree landing,
+      // but there is no perch here to announce or scamper up to, so the
+      // interaction registry and material collection sit this one out.
+      glider = clingTo(glider, tree, point);
+      emit({ type: 'glide:clung', tree, height: point.y });
+      for (const runEvent of runs.extend(tree, finished)) emit(runEvent);
+      for (const puzzleEvent of puzzle.land(tree, { reason, atTime: elapsed, glide: finished })) {
+        emit(puzzleEvent);
+      }
+      return;
+    }
+
+    glider = climbFrom ? climbFromGlider(glider, tree, climbFrom, profile) : landOn(glider, tree);
     emit({ type: 'glide:landed', tree, reason, glide: finished });
 
     // Catching bark extends the chain (and, on a milestone, celebrates it);
@@ -102,6 +145,10 @@ export function createSimulation(options = {}) {
       for (const runEvent of runs.extend(tree, finished)) emit(runEvent);
     }
 
+    for (const puzzleEvent of puzzle.land(tree, { reason, atTime: elapsed, glide: finished })) {
+      emit(puzzleEvent);
+    }
+
     interactions.land(tree, context());
 
     // Materials are claimed by arriving, which reuses the landing the player
@@ -111,10 +158,14 @@ export function createSimulation(options = {}) {
   }
 
   function doRespawn() {
+    for (const puzzleEvent of puzzle.respawn()) emit(puzzleEvent);
+
     const from = treeById(glider.treeId);
-    if (from) interactions.leave(from, context());
+    // A cling never fired `interactions.land`, so there is nothing to leave.
+    if (from && glider.phase !== GliderPhase.CLINGING) interactions.leave(from, context());
     glider = perchOn(spawnTree);
     emit({ type: 'glide:respawned', tree: spawnTree });
+    for (const puzzleEvent of puzzle.arm(spawnTree)) emit(puzzleEvent);
 
     // Going home is not a clean finish, but it must not leave a chain running
     // either — the run ends here and the HUD can tell the two endings apart.
@@ -131,6 +182,7 @@ export function createSimulation(options = {}) {
     interactions,
     collection,
     runTuning,
+    puzzle,
 
     /** Subscribe to simulation events; returns an unsubscribe function. */
     on(listener) {
@@ -170,33 +222,62 @@ export function createSimulation(options = {}) {
     step(input, dt) {
       elapsed += dt;
 
+      const pitchBack = (input.pitch ?? 0) >= 0.5;
+      const aboutFaceEdge = pitchBack && !backHeld;
+      backHeld = pitchBack;
+
       if (input.respawn) {
         doRespawn();
         resetEdges(input);
         return;
       }
 
+      // A cling never turns in place — there is no branch underfoot, just
+      // bark — so only a perch reads steer and the about-face edge; both
+      // still launch on the same input.
       if (glider.phase === GliderPhase.PERCHED) {
+        if (input.launch) {
+          doLaunch();
+        } else {
+          glider = stepPerch(glider, { steer: input.steer, aboutFace: aboutFaceEdge }, profile, dt);
+        }
+        resetEdges(input);
+        return;
+      }
+
+      if (glider.phase === GliderPhase.CLINGING) {
         if (input.launch) doLaunch();
+        resetEdges(input);
+        return;
+      }
+
+      // Climbing is scripted, not flown — launch input is ignored and does
+      // not queue for the moment it becomes perched (LAN-571).
+      if (glider.phase === GliderPhase.CLIMBING) {
+        glider = stepClimb(glider, treeById(glider.treeId), profile, dt);
         resetEdges(input);
         return;
       }
 
       const { glider: moved, previous } = stepAirborne(glider, input, profile, dt, tuning);
       glider = moved;
+      for (const puzzleEvent of puzzle.step(previous, glider.motion)) emit(puzzleEvent);
 
       // Once clear of the tree we launched from, allow landing on it again —
       // otherwise a loop back around to the same branch would fly straight
-      // through it.
+      // through it. Towering trees have no perch — `perchRadius` there is
+      // the unreachable canopy overhead, not the trunk — so use the cling's
+      // own catch radius instead.
       if (glider.fromTreeId) {
         const from = treeById(glider.fromTreeId);
-        if (from && distance2D(from.position, glider.motion) > from.perchRadius + 2) {
+        const clearRadius = from && (from.towering ? from.catchRadius : from.perchRadius) + 2;
+        if (from && distance2D(from.position, glider.motion) > clearRadius) {
           glider = { ...glider, fromTreeId: null };
         }
       }
 
       const landing = resolveLanding(world, previous, glider.motion, glider.fromTreeId);
-      if (landing) doLand(landing.tree, landing.reason);
+      if (landing) doLand(landing.tree, landing.reason, landing.point, landing.climbFrom);
 
       resetEdges(input);
     },

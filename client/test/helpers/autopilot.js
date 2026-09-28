@@ -8,17 +8,25 @@
 
 const TWO_PI = Math.PI * 2;
 
-function wrapAngle(angle) {
+export function wrapAngle(angle) {
   return ((angle + Math.PI) % TWO_PI + TWO_PI) % TWO_PI - Math.PI;
 }
 
 /**
  * Pick a tree we can still arrive at inside its catch band.
  *
- * Note what this does *not* require: that the target be below us. Catching a
- * tall trunk halfway up and climbing to its top is how a player regains
- * altitude, so the pilot happily aims at trees whose perch is above its head —
- * it only needs to arrive above the tree's `minCatchY`.
+ * Note what this does *not* require: that the target be below us. The pilot
+ * happily aims at trees whose perch is above its head, gaining altitude by
+ * catching the tree at all — it only needs to arrive above the tree's
+ * `minCatchY`. It does, though, aim for the *canopy* catch specifically
+ * (arriving within `canopyDepth` of the perch) rather than the bare trunk
+ * below it, so most hops climb briefly rather than scampering up a long
+ * stretch of bare trunk. Since LAN-571 (trunk catches) and LAN-579 (canopy
+ * catches) both climb to the perch over several real simulated seconds rather
+ * than landing on it instantly, the smoke/run-mode tests that fly this pilot
+ * keep stepping through `GliderPhase.CLIMBING` rather than stopping the
+ * moment the glide ends. `climb.test.js` exercises both climbs directly, with
+ * its own hand-built worlds.
  */
 export function chooseTarget(simulation) {
   const { motion } = simulation.glider;
@@ -37,7 +45,8 @@ export function chooseTarget(simulation) {
     // Altitude we would arrive with, flying straight there at cruise. The
     // margin absorbs the extra sink that turning costs us.
     const arrivalY = motion.y - range / glideRatio;
-    if (arrivalY < tree.minCatchY + 3 || arrivalY > tree.perchY) continue;
+    const canopyFloor = Math.max(tree.minCatchY + 3, tree.perchY - tree.canopyDepth);
+    if (arrivalY < canopyFloor || arrivalY > tree.perchY) continue;
 
     const bearing = Math.atan2(dx, dz);
     const turn = Math.abs(wrapAngle(bearing - motion.heading));
@@ -54,17 +63,28 @@ export function chooseTarget(simulation) {
   return best;
 }
 
-/** Fill `input` with the steering that heads toward `target`. */
+/**
+ * Fill `input.steer` with the proportional steering that heads toward
+ * `point`'s x/z, capped at `maxSteer`. Does not touch `input.pitch` — callers
+ * that care (this file's own `steerToward`, and the puzzle course flight
+ * test) set it themselves, since "neutral pitch" versus "no opinion on pitch"
+ * are different callers' concerns, not this helper's.
+ */
+export function steerTowardPoint(input, simulation, point, maxSteer = 1) {
+  const { motion } = simulation.glider;
+  const bearing = Math.atan2(point.x - motion.x, point.z - motion.z);
+  const error = wrapAngle(bearing - motion.heading);
+  // Heading decreases as the squirrel turns right, hence the negation.
+  input.steer = Math.max(-maxSteer, Math.min(maxSteer, -error * 2));
+}
+
+/** Fill `input` with the steering that heads toward `target`, pitch neutral. */
 export function steerToward(input, simulation, target) {
   if (!target) {
     input.steer = 0;
     input.pitch = 0;
     return;
   }
-  const { motion } = simulation.glider;
-  const bearing = Math.atan2(target.position.x - motion.x, target.position.z - motion.z);
-  const error = wrapAngle(bearing - motion.heading);
-  // Heading decreases as the squirrel turns right, hence the negation.
-  input.steer = Math.max(-1, Math.min(1, -error * 2));
+  steerTowardPoint(input, simulation, target.position);
   input.pitch = 0;
 }

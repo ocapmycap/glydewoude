@@ -151,6 +151,53 @@ kbd {
   transform: translate(-50%, 0);
 }
 
+/* --- tree name labels ---------------------------------------------------- */
+
+/* Off by default (LAN-567) — display:none rather than opacity so a hidden
+   label can never be nudged into showing by a stray style change elsewhere. */
+.tree-labels {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tree-labels--hidden {
+  display: none;
+}
+
+/* Positioned in JS via left/top (screen pixels from renderer.projectToScreen)
+   and font-size (screen distance, see labelFontPx). A solid opaque plate
+   rather than the paper/text-shadow look everything else uses — low-vision
+   legibility (LAN-578) wants a guaranteed contrast ratio, which a translucent
+   paper background sitting over an unpredictable sky or canopy cannot
+   promise. --legible-* custom properties come from legibility.js via
+   tree-labels.js, so this file never hard-codes its own copy of the colours. */
+.tree-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  margin-top: -0.35rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  background: var(--legible-plate);
+  color: var(--legible-text);
+  font-weight: var(--legible-weight);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: 0 0.15rem 0.4rem rgba(34, 48, 31, 0.35);
+}
+
+.tree-label--hidden {
+  display: none;
+}
+
+/* A puzzle tree's tag is thicker-bordered rather than differently coloured,
+   so the distinction between "ordinary landmark" and "puzzle trial" survives
+   even if colour alone cannot be told apart. */
+.tree-label--puzzle {
+  border: 0.2rem solid var(--legible-text);
+}
+
 /* --- tuning panel ------------------------------------------------------- */
 
 .tuning {
@@ -216,6 +263,80 @@ kbd {
   font: inherit;
   font-size: 0.78rem;
   cursor: pointer;
+}
+
+/* --- help panel ----------------------------------------------------------- */
+
+/* Bottom-right: the one corner left free once the HUD (top-left), tuning
+   dials (top-right), run HUD (top-centre) and the opening hint (bottom-left)
+   have theirs. The hint sits underneath the panel's own position and is
+   simply covered by its opaque background once open. */
+.help-hint {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  opacity: 0.35;
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
+.help {
+  position: absolute;
+  right: 1rem;
+  bottom: 1rem;
+  width: 19rem;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--paper-edge);
+  border-radius: 0.75rem;
+  background: var(--paper);
+  font-size: 0.8rem;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(0.75rem);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.help--visible {
+  pointer-events: auto;
+  opacity: 1;
+  transform: none;
+}
+
+.help h2 {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+  letter-spacing: 0.06em;
+  text-transform: lowercase;
+}
+
+.help-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.help-row:last-child {
+  margin-bottom: 0;
+}
+
+.help-keys {
+  flex-shrink: 0;
+}
+
+.help-gamepad {
+  margin-left: 0.35rem;
+  opacity: 0.55;
+  font-size: 0.72rem;
+}
+
+.help-action {
+  text-align: right;
+  opacity: 0.75;
 }
 
 /* --- upgrade shop ------------------------------------------------------- */
@@ -350,7 +471,8 @@ kbd {
   .hint,
   .toast,
   .tuning,
-  .shop {
+  .shop,
+  .help {
     transition: none;
   }
 }
@@ -524,4 +646,105 @@ kbd {
     transform: translate(-50%, 0);
     animation-name: milestone-burst-still;
   }
+}
+
+/* --- puzzle prompt ------------------------------------------------------ */
+
+/* Bottom centre: well below the squirrel, clear of the flight HUD and the
+   opening hint (bottom-left), and small enough to read at a glance mid-glide.
+   The line holds while a trial is armed or flying; the flash under it is the
+   one-off solve or fail beat and fades on its own (--flash-ms). */
+.puzzle-prompt {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.puzzle-prompt-line,
+.puzzle-prompt-flash {
+  padding: 0.3rem 0.9rem;
+  border: 1px solid var(--paper-edge);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.puzzle-prompt-line:empty,
+.puzzle-prompt-flash:empty {
+  display: none;
+}
+
+.puzzle-prompt-flash {
+  font-weight: 600;
+  animation: puzzle-prompt-flash var(--flash-ms, 2200ms) ease-out forwards;
+}
+
+.puzzle-prompt-flash[data-outcome='solved'] {
+  color: var(--accent);
+}
+
+@keyframes puzzle-prompt-flash {
+  0% {
+    opacity: 0;
+  }
+  12%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* --- off-screen puzzle pointer ------------------------------------------ */
+
+/* Whether the nearest puzzle tree is behind the camera or just off the edge
+   of the frame, this points at it from wherever it is pinned on screen
+   (see edgePointer in ui/puzzle-pointer.js). Shown whether or not the N-key
+   labels are on (LAN-578), so it covers full-screen like tree-labels does. */
+.puzzle-pointer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.puzzle-pointer--hidden {
+  display: none;
+}
+
+/* A solid triangle via clip-path, with a dark stroke faked from four offset
+   drop-shadows rather than an actual border (a clipped shape's border does
+   not follow the clip). Rotation and position are set inline in JS every
+   frame; the size comes from --arrow-size (PUZZLE_POINTER.arrowSizePx). */
+.puzzle-pointer-arrow {
+  position: absolute;
+  width: var(--arrow-size);
+  height: var(--arrow-size);
+  background: var(--legible-text);
+  clip-path: polygon(0% 8%, 78% 50%, 0% 92%);
+  filter:
+    drop-shadow(0.09rem 0 0 var(--legible-plate))
+    drop-shadow(-0.09rem 0 0 var(--legible-plate))
+    drop-shadow(0 0.09rem 0 var(--legible-plate))
+    drop-shadow(0 -0.09rem 0 var(--legible-plate));
+}
+
+/* Same solid plate as a tree label, and the same LEGIBLE_TEXT minimum size —
+   the pointer's name-and-distance line has to read as fast as the arrow. */
+.puzzle-pointer-text {
+  position: absolute;
+  padding: 0.4rem 0.9rem;
+  border-radius: 0.6rem;
+  background: var(--legible-plate);
+  color: var(--legible-text);
+  font-weight: var(--legible-weight);
+  white-space: nowrap;
+  box-shadow: 0 0.2rem 0.5rem rgba(34, 48, 31, 0.35);
 }

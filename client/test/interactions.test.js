@@ -70,8 +70,28 @@ describe('simulation wiring', () => {
   it('does not register economy interactions — those are later phases', () => {
     const simulation = createSimulation({ world: generateForest() });
     expect(simulation.interactions.has(TREE_TYPES.SHOP)).toBe(false);
-    expect(simulation.interactions.has(TREE_TYPES.PUZZLE)).toBe(false);
     expect(simulation.interactions.has(TREE_TYPES.CAFETERIA)).toBe(false);
     expect(simulation.interactions.has(TREE_TYPES.CUSTOMIZATION)).toBe(false);
+  });
+
+  // LAN-548 registers PUZZLE with the landmark interaction (D-50), so a
+  // puzzle tree still announces itself even though it is not economy content.
+  it('registers the puzzle interaction, so a puzzle tree still announces itself', () => {
+    const base = generateForest();
+    const spawnTree = base.trees.find((candidate) => candidate.id === base.spawnTreeId);
+    const world = { ...base, trees: [{ ...spawnTree, type: TREE_TYPES.PUZZLE, course: null }] };
+    const simulation = createSimulation({ world });
+    const events = [];
+    simulation.on((event) => events.push(event));
+
+    expect(simulation.interactions.has(TREE_TYPES.PUZZLE)).toBe(true);
+
+    // The spawn announcement fires during construction, before the listener
+    // above was attached, so respawn to see it land again.
+    const input = createInputState();
+    input.respawn = true;
+    simulation.step(input, FIXED_DT);
+
+    expect(events.map((event) => event.type)).toContain('landmark:arrived');
   });
 });

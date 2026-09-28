@@ -37,10 +37,12 @@ const MATERIAL_NAMES = Object.freeze(Object.values(MATERIAL_TYPES));
  *
  * The spawn tree is excluded — it is the tallest thing in the forest and
  * carries no cache, so including it would just compress everything else.
+ * Towering trees (LAN-553) are excluded too: they have no perch (`perchY`
+ * is null), so folding them in would turn every height comparison into NaN.
  */
 export function materialEffortScale(world) {
   const spawn = world.trees.find((candidate) => candidate.id === world.spawnTreeId);
-  const scored = world.trees.filter((tree) => tree.id !== world.spawnTreeId);
+  const scored = world.trees.filter((tree) => tree.id !== world.spawnTreeId && !tree.towering);
 
   const distances = scored.map((tree) =>
     (spawn ? distance2D(spawn.position, tree.position) : 0));
@@ -117,6 +119,11 @@ export function generateMaterialCaches(world, overrides = {}) {
   const scale = materialEffortScale(world);
   const caches = [];
   for (const tree of world.trees) {
+    // Towering trees (LAN-553) never carry a cache — skip before touching
+    // rng at all. Safe only because worldgen always appends them after every
+    // ordinary tree; skipping mid-sequence would shift every roll after it
+    // and move caches that a future reorder didn't intend to touch.
+    if (tree.towering) continue;
     // Roll for every tree in order, whether or not it wins, so the sequence
     // stays stable if the cache chance is retuned.
     const roll = rng();

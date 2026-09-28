@@ -26,6 +26,9 @@ export const PALETTE = Object.freeze({
   groundDeep: 0x4e7a3e,
   bark: 0x6b4a34,
   barkGreat: 0x7d5940,
+  // Towering trees (towering-trees.js): darker and cooler than any ordinary
+  // bark, so the giants read as older and further off (D-67).
+  barkTowering: 0x4e4642,
   // Structures (structures.js): lighter and greyer than trunk bark, so a
   // planked platform reads as built rather than as more tree.
   plank: 0xa9835a,
@@ -37,6 +40,33 @@ export const PALETTE = Object.freeze({
   squirrelBody: 0xb2703c,
   squirrelBelly: 0xf0dcb8,
   squirrelMembrane: 0xd88c4a,
+  // Puzzle rings (rings.js): pale cream for rings still ahead, a warm gold
+  // for the next one due and the target marker, so "go here" is one colour.
+  ring: 0xf4ead0,
+  ringNext: 0xffc83d,
+  // Wind streaks (wind.js): a near-white with a warm tint, so at low
+  // opacity against the sky they read as moving air, not as rings.
+  wind: 0xf7f4e6,
+  // Puzzle trees (trees.js): a fall canopy, red drifting to orange with amber
+  // tufts, so the few puzzle trees pick out of the green from a glide (D-69).
+  // Kept redder than canopyDestination so a puzzle tree never reads as an
+  // ordinary landmark's gold.
+  canopyAutumn: 0xc4472b,
+  canopyAutumnAlt: 0xe2782c,
+  canopyAutumnTuft: 0xeaa53c,
+  // Pale beech bands on a puzzle tree's trunk: light and warm, never grey.
+  beechBand: 0xdcc6a2,
+  // Puzzle tree beacons (beacons.js): a warm glow, distinct from the cooler
+  // gold of ringNext, so a beacon reads as "look here" and a ring as "fly
+  // through here".
+  beacon: 0xffd27a,
+  // Butterflies (butterflies.js): soft, a little chalky, so they read as
+  // small life against the greens without outshining a puzzle tree's canopy
+  // or a beacon (D-77).
+  butterflyWhite: 0xf6f1e4,
+  butterflyYellow: 0xf1dd86,
+  butterflyOrange: 0xeea055,
+  butterflyBlue: 0x8db6e3,
 });
 
 /**

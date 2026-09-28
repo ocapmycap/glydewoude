@@ -815,3 +815,1005 @@ close to a tier's surface, so it is placed literally.
 fix — worldgen, landing and catch radii are untouched, and the drey or
 platform a player sees now matches the canopy silhouette it is supposed to
 sit in.
+
+## D-49 — Puzzle targets are measured from the drop to the target's perch, with slack and a clear line
+
+**Ambiguity.** LAN-546 asks for a target "reachable in one glide at base
+stats" using `maxGlideRange` "from the puzzle tree's perch height", and for
+rings "between the puzzle tree and the target". Measuring range from the perch
+height above the *ground* would accept targets you can only reach by arriving
+below their catch volumes. It also leaves open where between the trees the
+rings go, and whether anything may stand in the way.
+
+**Decision.** A target must perch lower than the puzzle tree, sit at least
+`PUZZLE_CONFIG.minTargetDistance` (30 m) away horizontally, and be within
+`reachMargin` (0.8) × `maxGlideRange(puzzle.perchY − target.perchY)` at
+`BASE_GLIDE_STATS`. The great tree, other puzzle trees and other targets are
+never targets or puzzles. The 3 rings sit at ¼, ½ and ¾ of the straight line
+from the puzzle perch point to the target perch point, so they descend by
+construction, and every ring's `normal` is that line's unit direction. A
+target is rejected if that line, sampled every ~1 m, enters another tree's
+catch volume inflated by the ring radius (`pathIsClear`, mirroring
+`treeCatches` in `client/src/sim/landing.js`). Selection runs after the
+structures pass on its own stream, `(seed ^ PUZZLE_CONFIG.seedSalt) >>> 0`.
+
+**Reasoning.** Measuring from the drop is the stricter reading, so it satisfies
+the looser one too. The margin leaves room for the launch and small
+corrections. The line is steeper than a best-ratio glide, so a pilot can
+always lose height to meet it. A course blocked by a canopy would catch the
+squirrel mid-trial and could never be solved. The clearance check copies the
+landing geometry because `shared/` cannot import `client/`; if
+`treeCatches` changes, `pathIsClear` must change with it.
+
+## D-50 — Puzzle trees stop announcing their name until LAN-548 registers them
+
+**Ambiguity.** Turning a landmark into `TREE_TYPES.PUZZLE` moves it out of
+reach of the `landmark` interaction, so landing on it no longer emits
+`landmark:arrived`. Registering `landmarkInteraction` for `PUZZLE` now would
+fix that, but `client/test/interactions.test.js` ("does not register economy
+interactions") asserts that `PUZZLE` is *not* registered.
+
+**Decision.** Leave `createSimulation` alone in LAN-546. The 2–3 puzzle trees
+land silently until LAN-548, which the issue already tasks with registering a
+`PUZZLE` interaction that reuses `landmarkInteraction`. That ticket will have
+to update the existing assertion deliberately.
+
+**Reasoning.** An existing test's expectations are not changed to make a new
+change pass. Losing a name popup on three trees for one ticket costs little,
+and LAN-548 already owns this wiring.
+
+## D-51 — A ring crossing is half-open: from strictly behind the plane to on or past it
+
+**Ambiguity.** LAN-547 says a step "crosses the ring's plane in the direction
+of `normal`", but not what happens when an endpoint sits exactly on the plane.
+Counting both "ends on the plane" and "starts on the plane" would credit one
+pass twice across two consecutive fixed steps; counting neither would miss it.
+
+**Decision.** `crossesRing` counts a step only when the start is strictly
+behind the plane and the end is on or in front of it. The crossing point is
+inside the ring when its distance from `center` is at most `radius`
+(boundary inclusive).
+
+**Reasoning.** A half-open interval gives each pass exactly one step. It also
+rejects in-plane and zero-length segments before the one division, so no
+separate guard is needed. The ring's `normal` is assumed unit length, as
+worldgen builds it (D-49); a non-unit normal would scale both distances
+equally and still give the right answer.
+
+## D-53 — Every perch on a puzzle tree arms it, and PUZZLE is now a registered interaction
+
+**Ambiguity.** LAN-548 says "perching on a puzzle tree arms its trial", but
+the squirrel also ends up perched after a ground reset, at construction and
+after a respawn. The issue also asks for a `PUZZLE` interaction while saying
+the existing interaction tests pass unchanged, yet
+`client/test/interactions.test.js` asserted `PUZZLE` was *not* registered.
+
+**Decision.** Any perch on a puzzle tree arms it — a catch, a ground reset
+that climbs one, the spawn perch and a respawn. A ground failure and a re-arm
+can therefore arrive together (`puzzle:failed` then `puzzle:armed`). Perching
+on any other tree clears an unstarted trial silently. The one `PUZZLE` line in
+"does not register economy interactions" was removed and a positive test
+added beside it, as D-50 said this ticket would; the shop, cafeteria and
+customization assertions are untouched.
+
+**Reasoning.** The squirrel can launch from wherever it perches, so arming on
+every perch keeps "am I on a puzzle tree?" a single rule. The great tree is
+never a puzzle (D-49), so spawn arming only matters for hand-built test
+worlds. The assertion change was planned in D-50; leaving it would have made
+the issue's explicit registration impossible.
+
+## D-54 — The trial returns events from plain methods; failures name the puzzle tree
+
+**Ambiguity.** The issue fixes the `puzzle:solved` payload but not the others,
+nor exactly when in a step each check runs.
+
+**Decision.** `createPuzzleTrial()` exposes `arm`, `start`, `step`, `land` and
+`respawn`, each returning an event array the simulation emits. Payloads:
+`puzzle:armed { tree, course }`, `puzzle:started { treeId, course }`,
+`puzzle:ring { treeId, index }`, `puzzle:solved { treeId, atTime, glide }`,
+`puzzle:failed { treeId, reason }`, where `treeId` is always the puzzle tree.
+Rings are checked after the glide step and before landing is resolved, so a
+ring crossed on the step that catches the target still counts. Puzzle events
+follow `glide:landed` and the run events, and precede interactions and
+material collection.
+
+**Reasoning.** Returning events mirrors `runs.extend` and keeps the trial
+testable without a simulation. Naming the puzzle tree in every event lets the
+UI (LAN-549) and the server intent (LAN-550) key on one id.
+
+## D-55 — The target gets a gold cone hanging over its perch, and is "the marked tree" when unnamed
+
+**Ambiguity.** LAN-549 leaves the target marker to the implementer, and asks
+for a prompt reading "land on <target name>". In the default world every
+course targets an unnamed scenery tree (D-49 picks targets from any lower
+tree), so there is usually no name to show.
+
+**Decision.** One upside-down cone, outlined, in the same gold as the next
+ring (`PALETTE.ringNext`), hangs 3.2 m above the target's perch while its
+trial is armed or flying, and hides with the rings. The prompt uses the
+target's `name` when it has one and "the marked tree" otherwise. Rings still
+ahead are pale cream (`PALETTE.ring`); the next ring due is gold; passed rings
+drop their outline and fade to 30 % opacity rather than disappearing.
+
+**Reasoning.** A marker the player can see from the puzzle tree does the job a
+name cannot, and sharing the next ring's colour makes "fly through gold, land
+under gold" a single rule. Naming targets would change worldgen output for
+existing trees, which is out of scope here. Keeping passed rings faintly
+visible shows the line already flown.
+
+## D-56 — Rings are driven by events, and a respawn hides them
+
+**Ambiguity.** The simulation clears an armed trial that never launched on a
+respawn without emitting any `puzzle:*` event (D-54), so a renderer that only
+listens to puzzle events would leave the rings up.
+
+**Decision.** `main.js` shows a course on `puzzle:armed`, advances it on
+`puzzle:ring`, and hides it on `puzzle:solved`, `puzzle:failed` or
+`glide:respawned`. The prompt clears its line on `glide:respawned` the same
+way. Every course's rings are built once at startup and toggled, not built
+when a trial arms.
+
+**Reasoning.** The issue asks for the wiring to follow the simulation's
+events. Adding a respawn event to the trial would change sim/ for a display
+concern. Events arrive in order, so a failure followed by a re-arm on the
+same landing (D-53) hides and then shows the right course. With at most three
+courses of three rings, building them all up front costs less than a stall on
+the frame a trial arms.
+
+## D-59 — Gamepad mapping: standard layout, forward-is-dive, dead zone 0.15
+
+**Ambiguity.** LAN-551 asks for gamepad support but the product doc doesn't
+pin down which axes and buttons map to what, or how a dead zone should be
+applied.
+
+**Decision.** Only the Standard Gamepad layout is read, and only the first
+connected pad reporting it — other pads and non-standard layouts are ignored
+rather than guessed at. Axis 0 is steer, right positive, matching the sim's
+sign. Axis 1 is pitch, used as-is: the browser reports pushing the stick
+forward as negative, and forward already means dive (negative pitch) in this
+game's convention, so no inversion is needed. Button 0 (A) is launch, button
+3 (Y) is toggleShop, button 8 (Back/Select) is respawn, all in a frozen index
+table. Deflection inside `GAMEPAD_DEAD_ZONE` (0.15) reads as zero; past it,
+the remaining travel is rescaled so full deflection still reaches +-1.
+
+**Reasoning.** Standard-only keeps the mapping honest — anything else would
+be guessing at unlabelled axes. Matching the existing dive/pitch sign
+convention (`W` = dive in `ui/input.js`) means the stick
+"just works" instead of needing a per-control inversion the player has to
+learn. Rescaling past the dead zone keeps precision at the extremes instead
+of leaving a dead band the player can feel.
+
+## D-60 — Precedence keys > stick > mouse; buttons are press-edge; polled once per step
+
+**Ambiguity.** With three simultaneous input sources it isn't obvious which
+should win when more than one is active at once, or how often the gamepad
+should be read against the fixed-timestep loop it feeds.
+
+**Decision.** `sync(dt)` resolves steer and pitch in the order keys, then
+gamepad stick, then mouse drift — each only fills in a zero left by the one
+before it. Gamepad buttons fire on the press edge only, using the previous
+poll's held state, so holding launch doesn't repeat it every step. The pad is
+polled exactly once per `sync` call, i.e. once per fixed step; a press
+shorter than the gap between two polls could be missed entirely.
+
+**Reasoning.** Keys are digital and deliberate, so they should never be
+fought by an idle stick sitting slightly off-centre; the stick is likewise a
+more explicit signal than ambient mouse drift while pointer-locked, so it
+goes next. Press-edge buttons match how the keyboard's `event.repeat` guard
+already behaves, keeping the two input paths consistent. Polling once per
+step is the same cadence every other input source already runs at; a missed
+sub-step press is an acceptable trade against reading raw browser state at a
+different rate than the simulation advances.
+
+## D-61 — Wind is visual only, with one seeded direction per world
+
+**Ambiguity.** LAN-552 asks for visible wind. Real wind would push the
+squirrel and change glide feel, which is the Phase 1 go/no-go (product doc
+§9). It is also open whether wind should vary across the forest.
+
+**Decision.** `client/src/render/wind.js` draws streaks and leaves and
+nothing else; the simulation never hears about wind. One prevailing heading
+per world, drawn from `createRng(world.seed ^ 0x77a1d5e3)` in the glider's
+heading convention, so the same world always blows the same way. Spawn
+positions, lifetimes and wobble use `Math.random()`, which `CLAUDE.md` allows
+under `render/`.
+
+**Reasoning.** Pushing the squirrel needs a human playtest. A fixed direction
+reads as weather; per-mark random directions would read as noise. Salting the
+seed keeps the wind stream apart from worldgen's, so it cannot disturb the
+forest.
+
+## D-62 — A fixed pool of marks around the camera, recycled in place
+
+**Ambiguity.** How to keep the effect's cost flat, and how to fade marks
+subtly when toon materials cannot fade per instance (D-43).
+
+**Decision.** 24 streaks share one `LineSegments` buffer (8 points each) and
+12 leaves share one `InstancedMesh`, both built once. Marks spawn within 60 m
+of the camera (horizontally), in a band from 14 m below to 10 m above it and
+never under 1.5 m above the ground. A mark is respawned when its life ends or
+when it is more than 70 m from the camera. Streaks fade through per-vertex
+alpha (a four-component colour attribute): the tail is transparent, and the
+whole streak rises and falls with `sin(pi * t)` to a peak of 0.35. Leaves use
+a transparent toon material at 0.7 opacity with no outline hull, and grow in
+and shrink away like the landing burst. The step runs in the streaks'
+`onBeforeRender`, which gets the camera it draws for, and writes into
+preallocated buffers without allocating.
+
+**Reasoning.** Two draw calls and no allocation, however large the forest.
+Lines stay one pixel wide at any distance, which gives "thin" without a
+camera-facing ribbon. Recycling marks the camera has outrun keeps the density
+steady at glide speed.
+
+## D-63 — "Towering" trees, with `perchY: null` meaning "no reachable top"
+
+**Ambiguity.** LAN-553 asks for "headless" trees: giants whose tops you can
+never reach. "Headless" already means "runs without a browser" here, and the
+issue leaves open how landing code should tell that a tree has no perch.
+
+**Decision.** In code they are **towering** trees: `tree.towering === true`
+on the giants, `false` on every other tree. A towering tree has
+`perchY: null`; `minCatchY` and `catchRadius` stay numeric so LAN-554 can
+catch the trunk from the side. They are `TREE_TYPES.SCENERY`, never
+destinations, and carry no structures, course or material cache. Until
+LAN-554 adds clinging, `treeCatches` returns `false` for them explicitly, and
+the ground-contact reset in `landing.js` only picks ordinary trees.
+`materialEffortScale` ignores them, so every cache's effort is unchanged.
+Until LAN-555 draws them, `client/src/render/trees.js` leaves them out of the
+instanced forest, because its canopy placement is computed from `perchY`.
+
+**Reasoning.** One searchable word per meaning. A `null` perch fails loudly in
+arithmetic instead of pretending to be a height, which is what we want for
+any code that has not considered towering trees yet. For now they are
+invisible and do not catch the squirrel, so a player cannot run into
+something they cannot see.
+
+## D-64 — Four towering trees on their own salted stream, in the outer half
+
+**Ambiguity.** How many, how big, and where. LAN-553 set defaults without a
+human, and the existing forest must not move.
+
+**Decision.** `TOWERING_TREE_CONFIG` in `shared/src/constants.js`: 4 trees;
+trunk height 2.5–3.5 × `trunkHeightRange[1]` (85–119 m, against the great
+tree's 46 m); trunk radius 2–3 × `trunkRadiusRange[1]`; canopy radius 2–2.5 ×
+`canopyRadiusRange[1]`. Positions are drawn evenly over the annulus from
+0.5 × to 1 × `areaRadius`. Each is at least `minSpacing` from every ordinary
+tree and at least 0.5 × `areaRadius` (130 m) from every other towering tree,
+with up to 4000 attempts (fewer trees if they do not fit). They come from
+`createRng((seed ^ 0x2545f491) >>> 0)` after puzzle courses are placed, and
+are appended to the end of `world.trees` with ids `tree-towering-N`. Tests
+pin a hash of the default world's first 187 trees and of all its caches,
+taken before this change.
+
+**Reasoning.** A separate salted stream appended last is the pattern
+puzzle courses already use (LAN-546). It is the only way to leave every
+existing id, position and cache untouched. The outer half keeps them away from
+the spawn clearing. 130 m of separation spreads four trees around the rim, so
+they frame the forest instead of clustering.
+
+## D-65 — Cling geometry: anywhere on the trunk, and a new phase to hold it
+
+**Ambiguity.** LAN-553 left towering trees uncatchable — `treeCatches`
+explicitly returns `false` for them — with clinging deferred to LAN-554.
+Nothing said whether the trunk should keep the ordinary tree's `minCatchY`
+floor and canopy volume, or how the squirrel's state machine should represent
+"stuck to the side of a trunk" versus "standing on a perch".
+
+**Decision.** Clinging is a separate check, `clingPoint` in `landing.js`, not
+a branch of `treeCatches` — that function keeps returning `false` for
+towering trees exactly as D-63 left it, so LAN-553's test stays meaningful. A
+towering trunk catches anywhere from the ground to `tree.position.y +
+tree.trunkHeight`, with no `minCatchY` floor: there is no perch to require
+climbing further towards, so there is nothing for a floor to protect. The
+canopy above the trunk top is not a catch volume — flying over it just passes
+through open air above, same as any tree's crown. The catch point sits
+`trunkRadius` out from the centre, on the side the squirrel approached from
+(falling back to the direction from `previous`, then +Z, so a dead-centre hit
+never divides by zero), at the exact height of the hit. `resolveLanding`
+skips a towering tree outright while it is `fromTreeId` — unlike the
+distance-gated guard ordinary trees use, there is no perch radius to measure
+a towering tree's guard against.
+
+The squirrel gets a third `GliderPhase`, `CLINGING`, alongside `PERCHED` and
+`GLIDING`, rather than overloading `PERCHED` with a null perch height. A
+cling and a perch both mean "not airborne", but they hold different motion
+(a cling's `x/y/z` are the trunk-side point, not a branch) and, per D-66,
+different consequences when they end.
+
+**Reasoning.** Reusing `treeCatches`'s canopy/trunk split would have given
+towering trees a canopy volume they don't have and a floor that serves no
+purpose without a perch above it — "climbable anywhere on the visible bark"
+is the whole pitch of a giant tree you fly into. A dedicated phase keeps
+`sim/` code that branches on "is the squirrel free to launch" simple (both
+`PERCHED` and `CLINGING` qualify) without ever needing to ask whether a given
+perch is real.
+
+## D-66 — Cling in the loop: a catch, not a landing
+
+**Ambiguity.** `doLand` and `launch` assumed every arrival was onto a real
+perch: interactions fired, materials could be collected, and a launch always
+started from a branch already facing outward. A cling has none of those —
+there is no perch to announce to the interaction registry, no branch to push
+off from — but LAN-554 still needs it to feel like catching the run rather
+than losing it.
+
+**Decision.** `doLand` branches on `reason === 'cling'` before any of the
+perch bookkeeping: it calls `clingTo` instead of `landOn`, emits
+`glide:clung` with `{ tree, height }` instead of `glide:landed`, and still
+extends the run chain (`runs.extend`) and ends any puzzle trial in progress
+as a wrong-tree landing (`puzzle.land` already treats any non-ground,
+non-target tree that way). It does not call `interactions.land` or
+`collection.collectAt` — a trunk has no shop, no cache and nothing to
+announce. `launch` accepts `CLINGING` the same as `PERCHED`, but first turns
+the heading by π (wrapped into `(-π, π]`) so the push-off faces away from the
+trunk instead of into it, then hands off to the same `launchMotion` — same
+speed, same hop, no height gained or lost by clinging itself. `doLaunch` and
+`doRespawn` both skip `interactions.leave` when leaving a cling, since
+`interactions.land` never fired for it to balance. The `fromTreeId` guard
+that lets the squirrel loop back onto a tree it just left needed its own
+clause too: a towering tree has no `perchRadius` to measure against
+(`perchY` is `null`), so it clears at `catchRadius + 2` instead.
+
+One thing a cling does *not* do: save the server position anchor. `main.js`
+only calls `positionSync.save` on `glide:landed` and `glide:respawned`, so a
+cling's `glide:clung` is silently skipped. Checking `position-sync.js` and
+the server's plausibility check (`server/src/domain/validation.js`) confirms
+the anchor is not perch-specific — it is just the last position the server
+was told, used to bound how far a later `/collect` claim could plausibly be
+— so this is a gap worth naming rather than a broken assumption: a player who
+clings for a long time before their next perch reports a slightly stale
+anchor, the same as one who glides a long way without landing at all. Closing
+that gap, if it needs closing, is a `position-sync.js` change, not a `sim/`
+one.
+
+**Reasoning.** Treating a cling as a catch (extends the run) but not a
+landing (no interactions, no collection) matches what the player sees: they
+caught the tree and can push off again, but there was never a branch to
+arrive at. Reusing `launchMotion` rather than inventing a second launch path
+keeps the one place that owns "how fast does a push-off start" — no new
+tuning dial for a cling's hop.
+
+## D-67 — Towering trees: straight where you can cling, hazed toward the fog above
+
+**Ambiguity.** LAN-555 set the look (darker, cooler bark with a slight taper;
+a high, wide canopy; fog softening the upper trunk) without a human. Three
+things were left open. A taper moves the bark inward, but `clingPoint` always
+puts the squirrel exactly `trunkRadius` from the centre. The scene fog is
+linear by distance, so on its own it barely touches the top of a trunk 150 m
+away. And the dark inverted-hull outline would make the top end sharply
+whatever the fog does.
+
+**Decision.** Towering trees get their own module,
+`client/src/render/towering-trees.js`, called from `createForest` with the
+forest's shared bark texture and canopy geometry. There are four instanced
+meshes for all of them: trunk, trunk hull, canopy and canopy hull. The trunk
+keeps its full `trunkRadius` for the bottom 55% and tapers to 62% at the top.
+Nothing launches higher than the great tree's 46 m perch, and every towering
+trunk is at least 85 m tall (D-64), so the taper never reaches bark a
+squirrel can touch. It also uses 16 sides rather than 7, so the flats stay
+close to the circle the cling point is set on. The bark is
+`PALETTE.barkTowering` (a cool grey-brown). Above 35% of the height, both the
+bark and its outline blend toward `PALETTE.fog`, reaching 72% fog at the top.
+This is baked into vertex colours, so the fade works however the scene fog is
+set. The canopy is five wide, flat blobs centred on the top of the trunk, 42%
+of the way to fog, with a hull 60% of the way to fog. No scene-wide change
+to the fog was made.
+
+**Reasoning.** Keeping the reachable trunk straight means clinging needs no
+render-side knowledge of sim geometry, and no change to `clingPoint`. Vertex
+colours give a height fade without a custom shader, which is reserved for the
+Phase 4 art pass (§5.1), and cost no extra draw calls. If a height fog is
+added later, the vertex haze can be turned down rather than removed.
+
+## D-68 — Cling pose in a child group, and a side-on cling camera
+
+**Ambiguity.** The squirrel mesh had no limbs, and its root's rotation
+belongs to the renderer (heading, flight pitch, bank). LAN-555 also asked the
+camera to "pull back and out from the trunk, looking past the squirrel along
+the direction it will launch". Read literally, that puts the camera inside
+the trunk, because the squirrel faces the bark and the launch line runs
+straight back through where a chase camera sits.
+
+**Decision.** All squirrel parts now hang off a child `pose` group.
+`squirrel.update(spread, bank, clinging)` eases it through a quarter turn so
+the nose points up the trunk and the belly faces the bark, flattens it across
+the back to 72%, and shifts it so the belly meets the bark at the root
+(which the sim places on the trunk surface). The membranes hide, and four
+small leg boxes, hidden at all other times, show splayed diagonally on the
+bark. The renderer drops the perch's 0.55 m lift while clinging.
+`followCamera.update` now takes the glider phase instead of a `gliding`
+boolean. While clinging it sits 8 m to the squirrel's right, 1 m clear of the
+bark and 3 m up, and looks 4 m out along the launch line and 2.5 m down. That
+keeps the camera outside the trunk and the squirrel in frame, while turning
+the view toward the jump.
+
+**Reasoning.** A child group composes the cling in the squirrel's own frame,
+whatever the heading, so the renderer's Euler order and pitch logic are
+untouched. A side-on camera is the nearest framing to "looking past the
+squirrel" that is neither occluded by the trunk nor loses the squirrel
+off-screen. `CLINGING` in `follow-camera.js` is the dial to change after a
+playtest.
+
+## D-69 — Puzzle trees: a fall canopy and two pale beech bands
+
+**Ambiguity.** LAN-565 asked for puzzle trees to stand out from the air with
+"warm reds, oranges and ambers" and two light-tan trunk bands "on the
+lower-to-mid trunk", without fixing exact colours or heights. Puzzle trees
+are also destinations, which already get a gold canopy.
+
+**Decision.** In `trees.js`, a puzzle tree's canopy mixes `canopyAutumn`
+(`#C4472B`, a brick red) toward `canopyAutumnAlt` (`#E2782C`, orange) by one
+per-tree seeded draw. Its tufts lean 45% toward `canopyAutumnTuft` (`#EAA53C`,
+amber, lifted 10% toward the sky colour as green tufts are) instead of green. The canopy stays redder than `canopyDestination` so a
+puzzle tree never reads as an ordinary landmark. Two bands in `beechBand`
+(`#DCC6A2`, a touch lighter than the suggested `#D8C3A0` so the toon shadow
+band doesn't go muddy) sit at 40% and 70% of the bare trunk. The bare trunk is
+trunk height minus 1.7 canopy radii (the underside of the lowest blobs), with
+a floor of half the trunk height. Each band is 0.45 m tall and 6% wider than
+the trunk at that height, with the same seven facets and spin as the trunk and
+its own outline hull. That puts them at about 8 m and 14 m on Split Cedar.
+Bands are one extra InstancedMesh plus its hull, both skipped when a world has
+no puzzle trees.
+
+**Reasoning.** Placing bands against the bare trunk keeps them in view under
+the canopy on any tree height. Thin, flat and hugging the bark, they can't be
+mistaken for the round, free-floating flight rings from `rings.js`. Scenery,
+landmark and towering trees take the same colour paths and the same per-tree
+random draws as before, so they look unchanged.
+
+## D-70 — Tree name labels: DOM tags, 60 m fade to a 130 m cutoff
+
+**Ambiguity.** LAN-567 asked for a floating name tag over every named tree,
+toggled off by default with the N key, fading with distance and hidden past
+a cutoff and behind the camera, without fixing the fade band, the cutoff, or
+whether a label is DOM or a sprite.
+
+**Decision.** Labels are plain DOM, one `.tree-label` pill per named tree,
+positioned each frame from `renderer.projectToScreen(anchor)` and styled to
+match the existing toast (paper background, pill radius, letter-spacing),
+with a text and box shadow added so it stays readable over both sky and
+canopy. `TREE_LABEL_VIEW` in `client/src/ui/tree-labels.js` — the only module
+that reads it — fades a label from full opacity at `fadeStartDistance` (60 m)
+to invisible at `cutoffDistance` (130 m). On the default seed, ordinary named
+trees sit 71–119 m from the great tree, so their labels are already fading in
+gently by the time they're readable; Split Cedar, the puzzle tree, sits at
+148 m, past the cutoff, so its tag only appears once you've actually glided
+towards it. A label is hidden outright, not just faded to 0, once its world
+anchor is behind the camera (checked in view space, before the perspective
+divide, so it can't flip sign right at the camera plane) or past the cutoff.
+The N key toggles visibility; it starts off so the forest stays calm (product
+doc §2.1). No gamepad button: the only free one (X, button 2) is not wired,
+because adding it would change `mapGamepad`'s and `heldButtons`'s return
+shape, which existing gamepad tests pin with `toEqual`.
+
+**Reasoning.** DOM text is crisp at any zoom with no font atlas to bake and
+no extra draw call, and it reuses the toast's styling for free. Building each
+label's element once and only repositioning it after avoids per-frame DOM
+churn. The fade numbers come from where the current forest actually places
+its named trees, so the effect is visible without a screenshot: labels ease
+in over the approach to an ordinary destination, and a distant puzzle tree
+stays a surprise. The pure fade/anchor math lives in `ui/tree-labels.js`
+rather than `render/`, because that is its only consumer and it keeps the
+curve unit-testable without pulling in Three.js, the same boundary the rest
+of `sim/` and `shared/` are held to.
+
+## D-71 — Easing into the cling view over about 1.3 s
+
+**Ambiguity.** LAN-570 asked for the swing into the side-on cling view
+(D-68) to settle in "about 1 second", roughly 1.2–1.5 s to cover 95% of the
+distance, and for the aim point to sweep instead of snapping. It left open
+how the slower entry hands back to firm tracking, and whether aim easing
+should apply to every phase change.
+
+**Decision.** `follow-camera.js` gains `CLING_ENTRY` (`stiffness` 2.3/s,
+`seconds` 1.3). For 1.3 s after the phase becomes `clinging`, position eases
+at 2.3/s, which covers 95% of the swing in ln 20 / 2.3 ≈ 1.3 s; after that it
+tracks at `CLINGING.stiffness` (4) as before. The aim point is now held as an
+offset from the squirrel. Across a change into or out of `clinging` that
+offset eases with the same factor as position (so the launch back to the
+behind view keeps its old 3.4/s pace), and snaps to exact once within
+`LOOK_EASE.settled` (0.05 m). Every other phase change, such as perch to
+glide, still aims instantly. `PERCHED` and `GLIDING` are unchanged.
+
+**Reasoning.** 1.3 s sits in the middle of the requested band. A separate
+entry stiffness leaves the settled cling view as firm as before, so it does
+not drift. Easing the aim as an offset, and only around the cling view,
+removes the single-frame flip that read as a jolt without adding lag to the
+perched and gliding framing that has already been tuned. A time limit rather
+than a distance check ends the entry, so it cannot stretch out if the
+squirrel is moving.
+
+## D-72 — A trunk catch climbs into view instead of teleporting to the perch
+
+**Ambiguity.** LAN-571 asked for a bare-trunk catch on an ordinary tree to
+scamper up visibly rather than snapping straight to the perch, without
+saying which of the two catch volumes should trigger it, whether the events
+that already fire at the moment of catch (`glide:landed`, run-chain scoring,
+puzzle solve/fail, material collection) should move to the moment the climb
+finishes, or what happens to a held launch input during the climb.
+
+**Decision.** Only the trunk volume climbs — a canopy catch (at or above
+`perchY - canopyDepth`) still drops straight onto the perch exactly as
+before, and so does a ground-contact reset, which stays a teleport. Every
+game event that used to fire at catch still fires at catch, unchanged:
+`resolveLanding` keeps returning `reason: 'perch'` for a trunk catch too, so
+none of the existing listeners, the run tracker, or the puzzle trial need to
+know a climb is happening — it is presentation between the catch and the
+perch, not a new outcome. The one addition is `climbFrom`, a point on the
+trunk's bark at the height of the catch, carried on the landing result;
+`doLand`'s whole perch path (events, run scoring, puzzle resolution,
+`interactions.land`, material collection) runs exactly as it does today, and
+only the final glider assignment branches on whether `climbFrom` is present.
+A new `climbing` phase in `client/src/sim/glider.js` moves the glider
+straight up the trunk surface at `profile.climbSpeed` on a fixed timestep,
+keeping the heading it was flying at catch (`perchHeading`) so the perch it
+lands on faces the way the squirrel arrived, the same as a direct catch
+does today. It reaches the perch by snapping from the trunk surface to the
+perch's centre once `y` would reach or pass `perchY`, rather than sliding
+along the surface the whole way up. Launch input during a climb is ignored
+outright and does not queue for the moment it becomes perched.
+
+**Reasoning.** Keeping every event at catch time means LAN-571 cannot change
+what a run is worth or when a puzzle resolves — a purely visual issue stays
+visual. Reusing `reason: 'perch'` rather than inventing a third reason means
+none of the code that already branches on landing reasons needs to change,
+and a future reader only has to learn `climbFrom` exists, not a new outcome
+to handle. Keeping the flight heading for the eventual perch matches what a
+direct catch already did, so a canopy catch and a climbed one end up facing
+the same way. Ignoring launch outright, rather than queuing it, keeps the
+climb's timing simple and matches the product doc's "floaty and forgiving"
+pillar better than punishing an impatient held key.
+
+## D-73 — `climbSpeed` as a tuning dial; the climb reuses the cling camera and pose
+
+**Ambiguity.** LAN-571 left open how fast the climb should be, whether it
+belongs in `GLIDE_TUNING` or somewhere else, and what the camera and squirrel
+pose should do while it happens — a state genuinely new to the render layer.
+
+**Decision.** `climbSpeed` (8 m/s) joins `GLIDE_TUNING` and flows through
+`deriveGlideProfile` like every other dial nothing below it may read
+directly, and it gets its own row on the tuning panel (min 1, max 24, step
+0.5) so it can be felt out the same way the rest of the glide can. The
+renderer and follow camera treat `climbing` as the same "side view" as
+`clinging`: no perch lift, the same cling body pose, and the same
+side-on rig, entry ease, and look-ease rules — including on the way back
+out, when the climb finishes and the phase becomes `perched`, which now
+counts as leaving a side view exactly as leaving a cling already did.
+
+**Reasoning.** A dial governs how the climb feels, exactly like cruise speed
+or turn rate, so it belongs with them rather than as a hardcoded constant
+nothing can retune. The cling pose and camera already solve "squirrel
+plastered against bark, camera to the side" for the towering-trunk case;
+climbing is the same shape of problem on an ordinary trunk, and reusing the
+rig means LAN-571 adds no new camera code, just one more phase that counts
+as the view already tuned in D-68 and D-71.
+
+## D-74 — Trees between the camera and the squirrel: a dithered screen-door cutout
+
+**Ambiguity.** LAN-572 asked for trees standing between the camera and the
+squirrel to go see-through, without saying how — a per-material opacity
+fade, a shader-level cutout, or something else — or what the capsule size,
+clear zone round the squirrel, and ease timing should be.
+
+**Decision.** A dithered screen-door cutout patched onto the existing toon
+and outline materials via `onBeforeCompile`, in one new module,
+`render/see-through.js`, rather than three copies wired into trees.js,
+towering-trees.js and great-tree.js separately. Every patched fragment shader
+tests its world position against a capsule running from the camera to the
+squirrel and discards a share of fragments inside it, chosen by a 4x4 Bayer
+threshold at `gl_FragCoord.xy` so the cut share can ramp smoothly with the
+eased strength rather than popping a fixed checkerboard in and out. The
+numbers live in a frozen `SEE_THROUGH`: a 1.5 m capsule radius, a 1 m clear
+radius round the squirrel so bark it is touching or perched on never cuts
+out, a 0.15 s ease, and a 50% share of fragments discarded at full strength.
+The ease is global, not per-tree: `createSeeThrough(forest)` raycasts once a
+frame from the camera toward the squirrel against the forest group (`far`
+trimmed by the clear radius, so the squirrel's own trunk is never the
+blocker) and eases one shared strength uniform toward 1 when something is
+hit and toward 0 otherwise. Trunk, canopy, puzzle-tree bands and every
+outline hull are patched — ordinary trees, towering trees and the great
+tree alike — so a cut trunk and its outline hole line up. Ground and
+squirrel are never cut. Structures (dreys and platforms, `structures.js`)
+are also left alone, because LAN-572 scoped the cutout to trees: they are
+neither patched nor raycast against, so a platform between the camera and
+the squirrel still blocks the view. That is a known gap, not an oversight.
+
+**Reasoning.** The forest is instanced (D-38) precisely so a couple of
+hundred trees cost a handful of draw calls; per-tree transparency would mean
+per-tree materials and lose that. D-43 already ruled out per-material
+opacity as a general tool because Three.js has one opacity per material and
+sorting transparent instances is its own problem — the same reasoning
+applies here, doubled, since this needs a *moving* cutout rather than a
+fixed one. A discard-based cutout sidesteps both: it stays opaque for
+depth and sorting purposes and only decides per-fragment, in screen space,
+whether to draw. Easing per-fragment is impossible with materials shared
+across many instances — there is no per-tree "time since this tree started
+blocking" to store — so the ease has to live on one shared clock instead,
+which also means a tree completely out of the way renders exactly as it did
+before this feature, at zero cost beyond the one raycast per frame.
+
+---
+
+## D-79 — Turning on the perch: steer spins on the spot, a back-tap about-faces
+
+**Ambiguity.** LAN-577 asked for the squirrel to be able to turn around while
+perched, without saying whether steer and the about-face should share one
+speed, what should trigger the about-face given there was no dedicated input
+field for it, and whether it should interrupt itself if steer is also held.
+
+**Decision.** While `PERCHED`, `input.steer` spins the squirrel on the spot at
+a new `perchTurnRate` (2.5 rad/s), the same sign convention as every other
+turn in the game — right decreases heading. Clinging and climbing are
+unchanged: steer and pitch still do nothing there, exactly as before. A
+back-tap plays a scripted about-face instead: exactly π, always toward
+increasing heading (left), over `aboutFaceDuration` (0.4 s), with steer
+ignored for as long as it is in progress — it does not add to or get
+interrupted by anything held alongside it. Rather than add a new input field,
+the trigger is the rising edge of `input.pitch >= 0.5` — the same threshold
+`stepGlide` already treats as a flare — detected once per step in
+`simulation.js`'s `step()` and tracked across every phase, not just `PERCHED`.
+That gets keyboard S/down, a stick pulled back, and (while pointer-locked) a
+sharp downward mouse move all for free, and it means a flare held all the way
+down through a landing does not fire an about-face the instant the squirrel
+reaches a perch — the edge already happened in the air, well before landing.
+`perchTurnRate` gets a row on the tuning panel, the same as every other feel
+dial; `aboutFaceDuration` does not, since the issue only asked for the turn
+rate to be tunable. No interaction handler auto-faces the squirrel toward
+anything — this is purely player input, exactly as landing already leaves
+heading wherever the approach put it.
+
+**Reasoning.** Reusing the flare threshold instead of adding a new bound key
+keeps the input surface the same shape `input-state.js` already has —
+`steer` and `pitch` are the only motion-relevant fields on `InputState`, and
+every other feature so far has found a way to read them rather than growing
+the struct. Edge-detecting in `simulation.js` rather than in `stepPerch`
+keeps `stepPerch` a pure function of its own arguments (`{ steer, aboutFace }`)
+with no memory of previous input, which is what lets it be tested directly
+without going through the simulation at all.
+
+## D-75 — Wind as ribbons of varied size, with gusts from reserved slots
+
+**Ambiguity.** LAN-573 asks for wind that a low-vision player notices. It
+gives approximate ranges but leaves open how sizes are distributed, how a
+ribbon faces the camera, how gusts fit the fixed pool from D-62, and how to
+keep big marks away from the lens.
+
+**Decision.** Streaks are no longer `LineSegments`. Each one is a ribbon of
+10 centre points (9 quads) in one indexed `Mesh` with a double-sided
+`MeshBasicMaterial`, so there is still one draw call. Each point is pushed out
+sideways along the cross product of the ribbon's direction and the line of
+sight, so the ribbon always faces the camera. It tapers to 15% of its head
+width at the tail and fades to transparent there. This replaces D-62's
+one-pixel lines, which WebGL draws one pixel wide whatever `linewidth` says.
+Each mark draws a size `s = random^2.2`, so most marks are small. Streak
+length is 4–20 m, head width 0.15–0.5 m, peak opacity 0.45–0.75 and curl
+0.45–1.6 m, all interpolated by `s`. Leaves are 0.8–2.5 in scale, drawn the
+same way. A gust comes 6–12 s after the previous one, with the first one 6–12 s
+after load. It wakes 6–10 of 10 streak slots and 4–6 of 6 leaf slots reserved at the end of each
+pool. The pools grow from 24 to 34 streaks and from 12 to 18 leaves. Gust
+marks take sizes from the top fifth of every range. They start 6–16 m up-wind
+of the camera and 6–20 m to one side, at most 6 m above or below it. Each one
+waits up to 0.4 s, then lives 0.9–1.1 s at 16–22 m/s (leaves: 1–1.1 s at
+10–14 m/s), so the whole gust is over in about 1.5 s. Spent gust slots stay
+idle, transparent or scaled to zero, until the next gust. Every mark fades
+out (leaves shrink) between 6 m and 3 m from the camera, so nothing draws
+closer than 3 m. Direction and the visual-only rule from D-61 are unchanged.
+
+**Reasoning.** A size curve biased toward small keeps the screen calm, so the
+occasional 20 m ribbon still stands out. Reserved gust slots keep D-62's
+promise of pools fixed at startup with no allocation per frame, and the
+ambient density does not dip during a gust. Gust marks start off to the side
+because the follow camera sits about 9 m behind the squirrel (`follow-camera.js`).
+The sweep then passes beside the squirrel rather than through it, and the
+3 m fade covers any ambient mark that drifts into the lens.
+
+## D-80 — Puzzle beacons: two soft columns, pulsing on wall time, hidden only for the armed tree
+
+**Ambiguity.** LAN-578 asks for a tall, soft, gently pulsing column of warm
+light above each puzzle tree, drawn without fog and hidden while that tree's
+trial is armed. It leaves open the column's shape, how "soft" is achieved,
+where the column starts, and how the render side learns which trial is armed.
+
+**Decision.** `client/src/render/beacons.js` draws two nested open-ended
+cylinders per puzzle tree: a 3 m core and a 5.5 m shell, 60 m tall, starting
+3 m above the canopy top (`perchY`, or the trunk top for a tree without one).
+Both use `MeshBasicMaterial` with `fog: false`, additive blending, no depth
+write and `PALETTE.beacon` (appended). A four-component vertex colour fades
+alpha from 1 at the base to 0 at the top. The pulse is a 2 s sine on the
+absolute clock, moving opacity between 0.55 and 0.8 on the core and 0.25 and
+0.45 on the shell, so it never reaches zero or full and never flashes. It
+advances in `onBeforeRender`, like wind and the leaf burst. `main.js` hides a
+tree's beacon on `puzzle:armed` and shows all of them on `puzzle:solved`,
+`puzzle:failed` and `glide:respawned`, the same events that drive the rings.
+It also hides the spawn tree's beacon at startup if the simulation armed a
+trial before any listener existed. All dials are in the frozen `BEACON`
+table.
+
+**Reasoning.** Additive blending makes the beacon read as brightness rather
+than as a colour, so it carries meaning without relying on hue, and
+overlapping beacons only ever get brighter. Only two or three puzzle trees
+exist, so a few plain meshes are cheaper to reason about than an instanced
+pool. Driving the pulse from wall time means a hidden beacon needs no state
+to resume.
+
+## D-81 — Legible labels and the off-screen puzzle pointer
+
+**Ambiguity.** LAN-578 asks for labels of at least 28 px, bold, at 7:1
+contrast with a minimum on-screen size, for puzzle labels that skip the
+cutoff, and for an edge-of-screen pointer to the nearest puzzle tree. It does
+not say how size varies with distance, whether ordinary labels keep their
+fade, what "nearest" is measured from, how a target behind the camera is
+shown, or what the pointer does during a trial.
+
+**Decision.**
+- One frozen `LEGIBLE_TEXT` table in `client/src/ui/legibility.js` holds the
+  size floor (28 px), the ceiling (44 px), the weight (700) and the plate and
+  text colours (`#22301f` on `#fff8ec`, about 14:1). A test computes the WCAG
+  ratio from the table itself. The JS sets these as `--legible-*` custom
+  properties, so `style.css` has no copy of its own.
+- Label size is 44 px within 20 m of the camera, easing linearly to 28 px by
+  the 130 m cutoff and staying at 28 px beyond it (`labelFontPx`).
+- Ordinary labels keep D-70's fade and cutoff. Puzzle labels ignore both:
+  they are fully opaque whenever they are in front of the camera. They read
+  "Puzzle · <name>" and have a thick light border, so they differ by text and
+  shape, not colour.
+- The pointer (`client/src/ui/puzzle-pointer.js`) targets the puzzle tree
+  with the smallest horizontal distance from the squirrel and shows that
+  distance, rounded to the metre. It sits where the ray from the screen
+  centre crosses a rectangle inset 72 px from the edge. A target behind the
+  camera is pinned to the left or right edge, pointing sideways, so the arrow
+  always says which way to turn. The pointer hides when the target's label
+  anchor is on screen, when the squirrel is within 15 m of the target, and
+  while any trial is armed, so it never pulls the player away from a course
+  in progress. It runs every frame whatever the `N` toggle says.
+
+**Reasoning.** Horizontal distance from the squirrel matches how the player
+steers, and it is the number they will see shrink as they fly toward the tree.
+Pinning behind-camera targets to a side edge replaces a mirrored,
+hard-to-read direction with the one decision the player has to make: turn
+left or turn right. Keeping ordinary labels' fade preserves D-70's calm
+forest. The labels that matter for finding things, puzzle labels and the
+pointer, are always fully opaque and so always meet the 7:1 contrast.
+
+## D-82 — A canopy catch climbs too, from wherever it was caught
+
+**Ambiguity.** LAN-579 asks a canopy catch to climb to the perch like
+LAN-571's trunk catch, instead of teleporting there, reusing the same
+`climbSpeed` dial and a minimum climb time of about 0.3 s. It does not say
+where in the foliage the climb should start from, how a squirrel caught
+several metres out in the canopy should close the gap to the trunk without
+either standing still mid-air or blowing past `climbSpeed` on the last tick
+into the perch, or where the floor on climb duration should live.
+
+**Decision.** `resolveLanding` now returns `climbFrom` for every perch catch,
+trunk or canopy: a trunk catch keeps projecting onto the bark (LAN-571)
+unchanged, and a canopy catch's `climbFrom` is the catch point itself, still
+out in the foliage. `climbFrom` (`glider.js`) decides, once, at the start of
+the climb, where it is headed: a catch already at or inside
+`tree.trunkRadius` (every trunk catch, and every tree the unit tests build
+without a `trunkRadius` at all) targets its own x/z, unchanged — a plain
+vertical rise, bit-for-bit what LAN-571 already shipped. A catch farther out
+heads straight for the perch itself (the tree's centre line, at `perchY`) in
+one continuous straight line, rather than stopping partway at the bark first:
+stopping at the bark would still leave a `trunkRadius`-sized snap to the
+centre on the final tick, which for a catch metres out in the canopy would
+badly overshoot `climbSpeed`. Either way, `stepClimb` moves toward that fixed
+target at `glider.climbRate ?? profile.climbSpeed` and hands off to `perchOn`
+exactly as LAN-571 did once it arrives, so the final step is still the same
+bark-to-centre (or already-centred) hand-off, now always within one step's
+budget of where it actually is. Heading is recomputed each step to keep facing
+the trunk centre, guarded against the dead-centre case.
+
+A fixed `climbRate` is chosen once, in `climbFrom`, when a `profile` is
+passed (Phase 1's `doLand` always passes the live one): `climbRate =
+min(profile.climbSpeed, pathLength / profile.minClimbDuration)`, where
+`pathLength` is the straight-line distance from the catch point to the climb
+target above. Fixing it once, rather than recomputing a floor every step,
+means a single number bounds every step of a given climb, so the
+`climbSpeed × dt` bound tested end-to-end holds on every tick without special
+cases for the last one. `minClimbDuration` (0.3 s) lives in `GLIDE_TUNING` next to `climbSpeed` and
+flows through `deriveGlideProfile` the same way `climbSpeed` does, since
+nothing below the profile is allowed to read `GLIDE_TUNING` directly. Ground
+resets are untouched — they still teleport straight to `perched`, the
+soft-reset exception `landing.js` already documents.
+
+**Reasoning.** Deciding the target once avoids a subtle trap: recomputing
+"pull toward the bark" from the *current* position every tick can't tell "was
+always this close" apart from "has been climbing in for a while," and would
+either freeze early (leaving a large jump at the very end) or never truly
+reach the centre. Aiming for the centre directly once off the bark, instead
+of via a trunk-surface waypoint, is what lets the last step be an ordinary
+bounded one instead of a special-cased jump — the same hand-off LAN-571 always
+used, just reached from a point that is already (nearly) there. A fixed
+climbRate chosen at the catch, rather than a per-step recomputation, is what
+makes "no faster than climbSpeed, ever" and "at least minClimbDuration" both
+simple, provable properties of the whole climb rather than emergent behaviour
+that has to be checked tick by tick.
+
+## D-78 — Controls are one frozen table; the help panel renders it, README mirrors it
+
+**Ambiguity.** LAN-575 asks for a permanent on-screen hint plus a help panel
+that `H` toggles, with the control list held once so it cannot drift from
+`input.js`'s actual bindings. It does not say where the hint or panel should
+sit among the HUD, tuning dials and run HUD that already claim three of the
+four screen corners, whether `Escape` should do one thing or two, or how a
+table of keys, gamepad buttons and mouse actions — not all of which have an
+`event.code` — should be shaped so a single automated test can check it
+against what `input.js` handles.
+
+**Decision.** `client/src/ui/controls.js` exports one frozen array,
+`CONTROLS`, of frozen rows (`keys`, `codes`, `gamepad`, `action`). `codes` is
+the subset of `keys` that are real `event.code` values — empty for the mouse
+click row and for "turn round while perched", which reuses codes another row
+already lists (`KeyS` / `ArrowDown`) rather than claiming them twice. On the
+`input.js` side, `ACTION_KEYS` is a single frozen `code -> action name` map
+that the `keydown` handler switches on, and `HANDLED_KEY_CODES` is exported
+straight from it (plus the existing steer/pitch maps) rather than kept as a
+hand-written list — so the two files cannot silently disagree, and
+`controls.test.js` checks both directions: every handled code has a covering
+row, and every row names only codes that are actually handled.
+
+The permanent hint ("H — controls") and the panel itself both sit
+bottom-right, the one corner not already spoken for (HUD top-left, tuning
+top-right, run HUD top-centre, opening hint bottom-left). The panel is an
+opaque paper card at the same position, styled like the tuning panel
+(`.tuning`) down to the transition and the `prefers-reduced-motion`
+exemption, so opening it simply covers the low-contrast hint underneath
+rather than needing to coordinate hiding it. `Escape` now does two things
+that happen to share a key: it closes the help panel *and*, if the pointer is
+locked, still releases it, both unconditionally — a player who opened help
+mid-glide should not have to press `Escape` twice to get both back. README's
+control table is not covered by the test (it is prose, not code) and must be
+kept matching `CONTROLS` by hand; it was already missing the `B` row before
+this change, and now gains `B`, `H` and `Esc` rows.
+
+**Reasoning.** Deriving `HANDLED_KEY_CODES` from the same map that drives the
+`keydown` switch, rather than writing it out separately, is what makes
+"a row exists for everything handled" a structural guarantee instead of a
+convention someone can forget to update. Giving mouse and turn-round rows an
+empty `codes` array rather than omitting them lets the panel still describe
+every input in one table without those rows ever being mistaken for stale
+coverage. Bottom-right for both the hint and the panel was the only corner
+free; centring the panel instead, like the shop, would have put a mostly
+static reference card over the same ground a player glides through constantly,
+which the shop can get away with only because opening it is already a
+deliberate stop.
+
+## D-76 — Butterflies are render-only, and read the squirrel through a getter
+
+**Ambiguity.** LAN-574 wants butterflies that scatter when the squirrel
+passes, but `render/` must not import `sim/`, and wind (the closest pattern)
+steps itself in `onBeforeRender` without ever seeing the glider. The issue
+leaves open how the squirrel's position reaches the effect.
+
+**Decision.** `createButterflies(scene, world, { glider })` in
+`client/src/render/butterflies.js` takes an optional getter that returns the
+same glider state object `renderer.render` draws. `main.js` passes
+`() => simulation.glider`, next to `createWind`. The effect reads
+`motion.x/y/z` from it once per frame and never writes anything back. There
+is no collecting, reward, event or server involvement, and nothing reaches
+`sim/` or `shared/`. Like wind, it uses `Math.random` and wall time freely,
+since render is outside the determinism rule.
+
+**Reasoning.** A getter keeps the wiring to one line beside wind, with no
+extra per-frame call added to the loop's `render` callback. It also means the
+module works without the squirrel at all: the default returns `null`, and
+nothing scatters.
+
+## D-77 — Butterfly pool: 10 groups of up to 4, respawned ahead of the camera
+
+**Ambiguity.** The issue fixes the target (3–8 butterflies within about 40 m
+of the camera, groups of 1–4, a pool of about 40, one `InstancedMesh`) but not
+the numbers that produce it, nor how a single mesh can flap two wings per
+butterfly.
+
+**Decision.** 10 groups × 4 slots = 40 butterflies. Each spawn draws a group
+size from `[1, 1, 2, 2, 2, 3, 3, 4]`, so about 22 are in the air at once, and
+the unused slots are scaled to zero. Each butterfly is two instances of one
+wing geometry, the second mirrored with a negative X scale. Flapping is a
+per-instance roll about the body, so the 80 instances are one draw call. A
+group is recycled when its centre is more than 85 m from the camera in 3D.
+It respawns 22–70 m away, within ±108° of the camera's facing, choosing
+between near a perch (45%, the nearest perch tree within 25 m), low over the
+floor (20%), or around the camera's height (the rest). It falls back to the
+camera's height when the first choice would be out of range. Groups grow in
+over 0.8 s and shrink inside 1–2.5 m of the lens, since toon materials cannot
+fade per instance (D-43). Each butterfly traces a two-sine loop around its
+drifting group centre and rests for 1–3 s every 4–10 s. A floor butterfly
+settles onto the ground. The others hover with their wings raised. The
+squirrel within 4 m of any butterfly scatters its whole group away and up at
+5 m/s and 3 m/s, decaying over 2.5 s. Wings take four new `PALETTE` entries,
+appended: white, pale yellow, orange and blue, one colour per group.
+
+**Reasoning.** A headless run of the module on the default seed, not
+committed, sampled the count within 40 m of a camera gliding at 12 m/s for two
+minutes. It gave a median of 5, with fewer than 2% of samples empty. A
+stationary camera gave a median of 7. The occasional peak above 8 happens
+when a group of 4 lands close by, and removing it would take a larger pool
+of smaller groups, which reads more like a swarm. The mirrored-instance
+wings meet the one-mesh budget without a custom shader, which is Phase 4 art
+work.
+
+## D-83 — Puzzle rings sit on a simulated neutral glide, not the straight line
+
+**Ambiguity.** LAN-581 moves puzzle rings onto the path a neutral glide
+actually flies, and replaces the straight-line reach and clear-path checks
+with checks along that path. It gives the spacing and ring size as "about"
+figures, and leaves open the timestep, the slack above the target, what
+"reachable" means past the last ring, and what happens to tests that pinned
+the old selection.
+
+**Decision.** `flyNeutralPath` in `shared/src/worldgen.js` runs
+`launchMotion`, then `stepGlide` with steer 0 and pitch 0, at
+`PUZZLE_CONFIG.pathStep` = 1/60 s, the client's `FIXED_DT`. The glide heads
+from the puzzle tree's perch toward the target's trunk. It stops when the
+target's catch volume takes it or it falls below the target's `minCatchY`.
+Rings sit at horizontal distances from 15 m (`firstRingDistance`) out to 10 m
+short of the target (`lastRingClearance`), evenly spaced. Each ring is
+interpolated onto the path and faces the path's direction there.
+`ringRadius` goes from 2.5 m to 4 m. A target qualifies when all of these
+hold:
+
+- the path is at least 2 m (`lastRingSlack`) above its perch at the last ring;
+- the path, still flown neutral with no steering, is caught by the target;
+- no other tree's catch volume touches the path before that. Up to the last
+  ring, the check widens each volume by the ring radius, so the rings clear
+  the foliage as well.
+
+`reachMargin` is removed, since nothing reads it now.
+
+Pairs more than 40 m beyond the nominal `maxGlideRange` are skipped without
+simulating. On every seed tested the launch never gains more than 11 m, so
+this margin cannot reject a pair the simulation would accept. Each path is
+simulated once, cached, and reused by `buildCourse`. The clearance scan
+checks only trees near the path's ground track. `generateForest()` takes
+about 10 ms warm, against 27 ms before this change, and its output is
+byte-identical to the unoptimised version.
+
+Existing tests changed for the new layout:
+- `expectValidCourse` no longer asserts `gap <= maxGlideRange(drop)`. The
+  launch carries a neutral glide about 10 m past that nominal line, so every
+  target a neutral glide can catch sits 5–20% beyond it. Reach is now proven
+  by the simulated-path worldgen test and `puzzle-course-flight.test.js`.
+- The pre-LAN-553 fingerprint is repinned. Only `type` fields changed:
+  different trees became viable, so the salted `randPick` picked different
+  puzzle trees. Every position and every other field is byte-identical on all
+  four tested seeds.
+- `puzzle-pointer.test.js` now expects Rookery Spire as the nearest puzzle
+  tree to the great tree on the default seed.
+
+**Reasoning.** Requiring the neutral path to be caught, not only to clear the
+target's perch, is what lets a pilot who holds pitch neutral finish the trial
+without a dive. Without it, a target could pass the slack check and still be
+overflown. The same deterministic path serves both target validation and
+ring placement, so the server can rebuild the course from the seed
+(product doc §6.1). Puzzle selection keeps its salted stream. Which trees
+become puzzles can still change, because viability depends on the reach
+check. That follows from the check the issue asked to replace, not from a new
+draw on the rng.
+
+## D-84 — Butterflies beat slowly in bursts and glide between them
+
+**Ambiguity.** LAN-582 sets the numbers: 2–3.5 beats per second, bursts of
+2–5 beats, 0.4–1.2 s glides, and 4–6 beats per second with no glides while
+scattering. It leaves open what "partly open" means as a wing angle, how a
+glide starts and ends without the wings snapping, and how the scatter rate
+hands back to the normal one as the scatter decays.
+
+**Decision.** In `client/src/render/butterflies.js`, each butterfly draws its
+own normal and scatter wingbeat rates and counts whole beats. When a burst's
+beats run out, the flap phase stops where a beat begins and the wings ease
+over 0.15 s to 0.25 rad, a shallow V, for the glide. The downstroke bob fades
+with them. They ease back out when the glide ends. A scatter cancels any
+glide and stops beat counting. The rate holds at the scatter rate for the
+first half of the 2.5 s scatter and then eases linearly back to the normal
+rate. This replaces the old `1 + fright` multiplier. Paths, path speed, rests,
+density and scatter distance are unchanged.
+
+**Reasoning.** Stopping the phase where a beat begins leaves the wings
+mid-swing at 0.35 rad, close to the 0.25 rad glide angle, so the short ease
+reads as the butterfly settling its wings, not as a jump. Per-butterfly
+rates, burst lengths and glide lengths, together with the random starting
+phase, keep a group out of step. Holding the scatter rate through the first
+half of the scatter gives the startle a visibly livelier beat. Easing back
+means the group does not drop to a slow beat all at once.
